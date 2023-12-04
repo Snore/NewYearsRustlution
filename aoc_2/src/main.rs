@@ -9,11 +9,11 @@ struct GamePull {
 }
 
 impl GamePull {
-    fn new(red: u32, 
-           green: u32, 
-           blue: u32) -> GamePull {
-        return GamePull{ red, green, blue };
-    }
+    // fn new(red: u32, 
+    //        green: u32, 
+    //        blue: u32) -> GamePull {
+    //     return GamePull{ red, green, blue };
+    // }
 
     fn parse( rec: &str ) -> GamePull {
         let re = Regex::new(r"\d+").unwrap();
