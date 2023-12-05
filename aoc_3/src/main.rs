@@ -1,20 +1,13 @@
 use std::fs;
-use std::fmt;
 use std::env;
 use regex::Regex;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 struct Part {
     number: u32,
-    symbols: Vec<char>,
+    symbols: Vec<(char, usize)>,
 }
-
-// impl fmt::Display for Part {
-//     fn fmt( &self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         let symbols_str: String = self.symbols.iter().collect();
-//         write!(f, "{}:{}", self.number, symbols_str)
-//     }
-// }
 
 impl Part {
     fn has_symbols( &self ) -> bool {
@@ -24,13 +17,12 @@ impl Part {
 
 struct Schematic {
     raw: String,
-    row_len: usize,
-    true_row_len: usize,
+    row_len: usize
 }
 
 impl Schematic {
     fn new( raw: String, row_len: usize ) -> Schematic {
-        Schematic { raw: (raw), row_len: (row_len), true_row_len: (row_len - 2) }
+        Schematic { raw: (raw), row_len: (row_len) }
     }
 
     fn scan_for_parts( &self ) -> Vec<Part> {
@@ -53,10 +45,14 @@ impl Schematic {
 
             let mid_row_str: &str = &self.raw[left_bound..right_bound];
 
-            let parimeter: String = top_row_str.to_string() + bottom_row_str + mid_row_str;
-            let found_symbols: Vec<char> = re_symbol_finder.find_iter(&parimeter).map(|sm| sm.as_str().chars().next().unwrap()).collect();
+            // let parimeter: String = top_row_str.to_string() + bottom_row_str + mid_row_str;
+            let found_symbols_top: Vec<(char, usize)> = re_symbol_finder.find_iter(&top_row_str).map(|sm| (sm.as_str().chars().next().unwrap(), sm.start() + top_row_start)).collect();
+            let found_symbols_mid: Vec<(char, usize)> = re_symbol_finder.find_iter(&mid_row_str).map(|sm| (sm.as_str().chars().next().unwrap(), sm.start() + left_bound)).collect();
+            let found_symbols_bot: Vec<(char, usize)> = re_symbol_finder.find_iter(&bottom_row_str).map(|sm| (sm.as_str().chars().next().unwrap(), sm.start() + bottom_row_start)).collect();
 
             // println!("Matched [{found_number}]\n[{top_row_str}]\n[{mid_row_str}]\n[{bottom_row_str}]");
+
+            let found_symbols: Vec<(char, usize)> = found_symbols_top.into_iter().chain(found_symbols_mid).into_iter().chain(found_symbols_bot).collect();
 
             // make the Part
             Part{ number: (found_number), symbols: (found_symbols)  }
@@ -104,4 +100,22 @@ fn main() {
     // println!("{parts:?}");
 
     println!("The sum of all part numbers is [{ans_1}]");
+
+    // make the hash map of all of the gears and populate it
+    let mut gear_map: HashMap<usize, Vec<u32>> = HashMap::new();
+
+    for part in parts {
+        for g_symbol in part.symbols.iter().filter(|s| s.0 == '*') {
+            gear_map.entry(g_symbol.1).or_insert(Vec::new()).push(part.number);
+        }
+    }
+
+    // println!("{gear_map:?}");
+
+    // use the hash map to find the answer
+    let ans_2: u32 = gear_map.iter()
+                             .filter(|gear| gear.1.len() == 2)
+                             .map(|gear| gear.1[0] * gear.1[1])
+                             .fold(0, |acc, sum| acc + sum );
+    println!("The sum of the gear ratios is [{ans_2}]");
 }
