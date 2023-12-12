@@ -6,6 +6,7 @@ use std::env;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 enum CardLabel {
    //  Unset = 0,
+    J = 0, // comment in for part 2
     C2 = 1,
     C3,
     C4,
@@ -15,7 +16,7 @@ enum CardLabel {
     C8,
     C9,
     T,
-    J,
+   //  J, // comment in for part 1
     Q,
     K,
     A
@@ -69,28 +70,28 @@ impl Hand {
         // first sort the hand for easier hand type identification
         hand.sort();
 
-      //   print!("[{hand:?}]->");
-        let dup_counts = Self::count_dups(hand);
-      //   println!("{dup_counts:?}");
+        //   print!("[{hand:?}]->");
+        let dup_counts: Vec<u8> = Self::count_dups(hand);
+        //   println!("{dup_counts:?}");
 
         if dup_counts[0] == 5 {
-         return HandType::FiveKind;
+            HandType::FiveKind
         } else if dup_counts[0] == 4 {
-            return HandType::FourKind;
+            HandType::FourKind
         } else if dup_counts[0] == 3 {
             if dup_counts[1] == 2 {
-               return HandType::FullHouse;
+                HandType::FullHouse
             } else {
-               return HandType::ThreeKind;
+                HandType::ThreeKind
             }
         } else if dup_counts[0] == 2 {
             if dup_counts[1] == 2 {
-               return HandType::TwoPair;
+                HandType::TwoPair
             } else {
-               return HandType::OnePair;
+                HandType::OnePair
             }
         } else {
-         return HandType::HighCard;
+            HandType::HighCard
         }
     }
 
@@ -98,7 +99,7 @@ impl Hand {
     /// any duplicates are right next to each other
     fn count_dups( input: Vec<CardLabel> ) -> Vec<u8> {
         let mut count_vec: Vec<u8> = Vec::with_capacity(Self::HAND_SIZE);
-        let mut count_count = 1;
+        let mut count_count: u8 = 1;
         for window in input.windows(2) {
          if window[0] == window[1] {
             count_count += 1;
@@ -111,7 +112,25 @@ impl Hand {
         count_vec.push(count_count); // don't forget the last card!
 
         // put the groupings up front so we can decied more easily later
-        count_vec.sort_unstable_by(|a, b| b.cmp(a));
+        count_vec.sort_unstable_by(|a: &u8, b: &u8| b.cmp(a));
+
+        // count the joker card and add their total to the first slot assuming first slot isn't jokers...
+        let joker_count: u8 = input.iter().filter(|c| c == &&CardLabel::J).count() as u8;
+      //   if joker_count != count_vec[0] ||
+      //      (count_vec.len() > 1 && joker_count == count_vec[1]) { // making sure we don't double dip on the jokers
+      //       count_vec[0] += joker_count;
+      //   }
+        if joker_count != count_vec[0] {
+         // add the joker count to the winner so we bolster their numbers
+         count_vec[0] += joker_count;
+        } else if count_vec.len() > 1 {
+         // then add the joker count to the runner up and swap positions
+         count_vec[1] += joker_count;
+         count_vec.swap(0, 1);
+        } else {
+         // don't add the joker count to anything, we have 5 jokers
+        }
+        println!("{count_vec:?}");
         count_vec
     }
 }
@@ -179,8 +198,38 @@ fn main() {
    // sort tht hands by rank
    hands.sort_unstable_by(|(a_hand, _a_bid), (b_hand, _b_bid)| a_hand.cmp(b_hand) );
    // then use each hand's index in 'hands' as multiplier with bid
+   // println!("{hands:?}");
    let ans_1: u32 = hands.iter()
                          .enumerate()
                          .fold(0, |acc, (h_rank, (_h_hand, h_bid))| acc + (h_bid * (h_rank + 1) as u32)); // +1 on the rank since enumerate starts at 0
-   println!("The total winnings for part 1 [{ans_1}]");
+   println!("The total winnings for part 2 [{ans_1}]");
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   #[test]
+   fn test_high_card() {
+      let hand = Hand::parse("KQ4T2");
+      assert_eq!(hand.hand_type, HandType::HighCard);
+   }
+
+   #[test]
+   fn test_4_kind_w_joker() {
+      let hand = Hand::parse("KTJJT");
+      assert_eq!(hand.hand_type, HandType::FourKind);
+   }
+
+   #[test]
+   fn test_5_kind_all_joker() {
+      let hand = Hand::parse("JJJJJ");
+      assert_eq!(hand.hand_type, HandType::FiveKind);
+   }
+
+   #[test]
+   fn test_5_kind_4_joker() {
+      let hand = Hand::parse("JQJJJ");
+      assert_eq!(hand.hand_type, HandType::FiveKind);
+   }
 }
