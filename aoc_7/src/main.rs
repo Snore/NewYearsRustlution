@@ -116,10 +116,6 @@ impl Hand {
 
         // count the joker card and add their total to the first slot assuming first slot isn't jokers...
         let joker_count: u8 = input.iter().filter(|c| c == &&CardLabel::J).count() as u8;
-      //   if joker_count != count_vec[0] ||
-      //      (count_vec.len() > 1 && joker_count == count_vec[1]) { // making sure we don't double dip on the jokers
-      //       count_vec[0] += joker_count;
-      //   }
         if joker_count != count_vec[0] {
          // add the joker count to the winner so we bolster their numbers
          count_vec[0] += joker_count;
@@ -130,7 +126,7 @@ impl Hand {
         } else {
          // don't add the joker count to anything, we have 5 jokers
         }
-        println!("{count_vec:?}");
+      //   println!("{count_vec:?}");
         count_vec
     }
 }
@@ -185,7 +181,7 @@ fn main() {
 
    // read
    let hand_raw: String = fs::read_to_string(file_path).unwrap();
-   println!("{hand_raw}");
+   // println!("{hand_raw}");
 
    // parse
    let mut hands: Vec<(_, _)> = hand_raw.split('\n')
@@ -231,5 +227,36 @@ mod tests {
    fn test_5_kind_4_joker() {
       let hand = Hand::parse("JQJJJ");
       assert_eq!(hand.hand_type, HandType::FiveKind);
+   }
+
+   #[test]
+   fn test_5_kind_3_joker() {
+      let hand = Hand::parse("JQJQJ");
+      assert_eq!(hand.hand_type, HandType::FiveKind);
+   }
+
+   #[test]
+   fn test_4_kind_3_joker() {
+      let hand = Hand::parse("J2JQJ");
+      assert_eq!(hand.hand_type, HandType::FourKind);
+   }
+
+   #[test]
+   fn test_1_pair_1_joker() {
+      let hand = Hand::parse("J2KQ3");
+      assert_eq!(hand.hand_type, HandType::OnePair);
+   }
+
+   #[test]
+   fn test_full_house_0_joker() {
+      let hand = Hand::parse("KKQKQ");
+      assert_eq!(hand.hand_type, HandType::FullHouse);
+   }
+
+   #[test]
+   fn test_ranking_joker_low() {
+      let hand_1 = Hand::parse("J3456"); // make this low to pass
+      let hand_2 = Hand::parse("33456");
+      assert_eq!(hand_1.cmp(&hand_2), Ordering::Less);
    }
 }
