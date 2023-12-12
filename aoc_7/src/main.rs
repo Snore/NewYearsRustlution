@@ -5,8 +5,8 @@ use std::env;
 // do i need this?
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 enum CardLabel {
-    Unset = 0,
-    C2,
+   //  Unset = 0,
+    C2 = 1,
     C3,
     C4,
     C5,
@@ -23,8 +23,8 @@ enum CardLabel {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum HandType {
-    Unset = 0,
-    HighCard,
+   //  Unset = 0,
+    HighCard = 1,
     OnePair,
     TwoPair,
     ThreeKind,
@@ -40,6 +40,7 @@ struct Hand {
 }
 
 impl Hand {
+   const HAND_SIZE: usize = 5;
     pub fn parse( input: &str ) -> Hand {
         let found_cards: Vec<CardLabel> = input.chars().map(|c| match c {
             '2' => CardLabel::C2,
@@ -58,7 +59,7 @@ impl Hand {
             _ => unreachable!(),
         }).collect();
 
-        assert!( found_cards.len() == 5, "ERROR: Expected 5 cards per hand." );
+        assert!( found_cards.len() == Self::HAND_SIZE, "ERROR: Expected 5 cards per hand." );
         let hand_type: HandType = Self::determine_hand_type( found_cards.clone() );
 
         Hand{ cards : (found_cards), hand_type : (hand_type) }
@@ -68,46 +69,50 @@ impl Hand {
         // first sort the hand for easier hand type identification
         hand.sort();
 
-        // Oh gross! there has to be a better way! maybe if i can bubble up the pairs?
-        if hand[0] == hand[1] &&
-           hand[1] == hand[2] &&
-           hand[2] == hand[3] &&
-           hand[3] == hand[4] &&
-           hand[4] == hand[5] {
-            return HandType::FiveKind;
-        }
+      //   print!("[{hand:?}]->");
+        let dup_counts = Self::count_dups(hand);
+      //   println!("{dup_counts:?}");
 
-        if ( hand[0] == hand[1] &&
-             hand[1] == hand[2] &&
-             hand[2] == hand[3] &&
-             hand[3] == hand[4] ) ||
-           ( hand[1] == hand[2] &&
-             hand[2] == hand[3] &&
-             hand[3] == hand[4] &&
-             hand[4] == hand[5]) {
-               return HandType::FourKind;
-         }
-
-         if ( hand[0] == hand[1] &&
-              hand[1] == hand[2] &&
-              hand[2] == hand[3] &&
-              hand[4] == hand[5] ) ||
-            ( hand[0] == hand[1] &&
-              hand[2] == hand[3] &&
-              hand[3] == hand[4] &&
-              hand[4] == hand[5] ) {
+        if dup_counts[0] == 5 {
+         return HandType::FiveKind;
+        } else if dup_counts[0] == 4 {
+            return HandType::FourKind;
+        } else if dup_counts[0] == 3 {
+            if dup_counts[1] == 2 {
                return HandType::FullHouse;
-              }
-
-        if hand.windows(3).any(|w| w[0] == w[1] && w[1] == w[2] ) {
-            return HandType::ThreeKind;
+            } else {
+               return HandType::ThreeKind;
+            }
+        } else if dup_counts[0] == 2 {
+            if dup_counts[1] == 2 {
+               return HandType::TwoPair;
+            } else {
+               return HandType::OnePair;
+            }
+        } else {
+         return HandType::HighCard;
         }
+    }
 
-        if hand.windows(2).any(|w| w[0] == w[1] ) {
-         return HandType::OnePair;
+    /// Assumes `input` is a sorted list of five cards such that
+    /// any duplicates are right next to each other
+    fn count_dups( input: Vec<CardLabel> ) -> Vec<u8> {
+        let mut count_vec: Vec<u8> = Vec::with_capacity(Self::HAND_SIZE);
+        let mut count_count = 1;
+        for window in input.windows(2) {
+         if window[0] == window[1] {
+            count_count += 1;
+         } else {
+            count_vec.push(count_count);
+            count_count = 1;
+         }
         }
+      
+        count_vec.push(count_count); // don't forget the last card!
 
-        HandType::HighCard
+        // put the groupings up front so we can decied more easily later
+        count_vec.sort_unstable_by(|a, b| b.cmp(a));
+        count_vec
     }
 }
 
@@ -171,9 +176,8 @@ fn main() {
                                             })
                                         .collect();
 
-   // sor tht hands by rank
-   hands.sort_unstable_by(|(a_hand, _a_bid), (b_hand, _b_bid)| a_hand.cmp(b_hand) ); // TODO make sure sorted in correct order
-   // println!("{hands:?}");
+   // sort tht hands by rank
+   hands.sort_unstable_by(|(a_hand, _a_bid), (b_hand, _b_bid)| a_hand.cmp(b_hand) );
    // then use each hand's index in 'hands' as multiplier with bid
    let ans_1: u32 = hands.iter()
                          .enumerate()
