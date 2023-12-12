@@ -3,7 +3,7 @@ use std::fs;
 use std::env;
 
 // do i need this?
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 enum CardLabel {
     Unset = 0,
     C2,
@@ -21,7 +21,7 @@ enum CardLabel {
     A
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum HandType {
     Unset = 0,
     HighCard,
@@ -33,6 +33,7 @@ enum HandType {
     FiveKind
 }
 
+#[derive(Debug)]
 struct Hand {
     cards: Vec<CardLabel>,
     hand_type: HandType
@@ -58,7 +59,55 @@ impl Hand {
         }).collect();
 
         assert!( found_cards.len() == 5, "ERROR: Expected 5 cards per hand." );
-        Hand{ cards : (found_cards), hand_type : (HandType::Unset) }
+        let hand_type: HandType = Self::determine_hand_type( found_cards.clone() );
+
+        Hand{ cards : (found_cards), hand_type : (hand_type) }
+    }
+
+    fn determine_hand_type( mut hand: Vec<CardLabel> ) -> HandType {
+        // first sort the hand for easier hand type identification
+        hand.sort();
+
+        // Oh gross! there has to be a better way! maybe if i can bubble up the pairs?
+        if hand[0] == hand[1] &&
+           hand[1] == hand[2] &&
+           hand[2] == hand[3] &&
+           hand[3] == hand[4] &&
+           hand[4] == hand[5] {
+            return HandType::FiveKind;
+        }
+
+        if ( hand[0] == hand[1] &&
+             hand[1] == hand[2] &&
+             hand[2] == hand[3] &&
+             hand[3] == hand[4] ) ||
+           ( hand[1] == hand[2] &&
+             hand[2] == hand[3] &&
+             hand[3] == hand[4] &&
+             hand[4] == hand[5]) {
+               return HandType::FourKind;
+         }
+
+         if ( hand[0] == hand[1] &&
+              hand[1] == hand[2] &&
+              hand[2] == hand[3] &&
+              hand[4] == hand[5] ) ||
+            ( hand[0] == hand[1] &&
+              hand[2] == hand[3] &&
+              hand[3] == hand[4] &&
+              hand[4] == hand[5] ) {
+               return HandType::FullHouse;
+              }
+
+        if hand.windows(3).any(|w| w[0] == w[1] && w[1] == w[2] ) {
+            return HandType::ThreeKind;
+        }
+
+        if hand.windows(2).any(|w| w[0] == w[1] ) {
+         return HandType::OnePair;
+        }
+
+        HandType::HighCard
     }
 }
 
@@ -115,14 +164,19 @@ fn main() {
    println!("{hand_raw}");
 
    // parse
-   let hands: Vec<(_, _)> = hand_raw.split('\n')
-                                    .map(|l| {
-                                        let (hand_chrs, bid_chars) = l.split_once(' ').unwrap();
-                                        (Hand::parse(hand_chrs), bid_chars.parse::<u32>().expect("ERROR: pasring bid"))
-                                        })
-                                    .collect();
+   let mut hands: Vec<(_, _)> = hand_raw.split('\n')
+                                        .map(|l| {
+                                            let (hand_chrs, bid_chars) = l.split_once(' ').unwrap();
+                                            (Hand::parse(hand_chrs), bid_chars.parse::<u32>().expect("ERROR: pasring bid"))
+                                            })
+                                        .collect();
 
-    // then sort 'hands'
-   //  hands.sort()
-    // then use each hand's index in 'hands' as multiplier with bid
+   // sor tht hands by rank
+   hands.sort_unstable_by(|(a_hand, _a_bid), (b_hand, _b_bid)| a_hand.cmp(b_hand) ); // TODO make sure sorted in correct order
+   // println!("{hands:?}");
+   // then use each hand's index in 'hands' as multiplier with bid
+   let ans_1: u32 = hands.iter()
+                         .enumerate()
+                         .fold(0, |acc, (h_rank, (_h_hand, h_bid))| acc + (h_bid * (h_rank + 1) as u32)); // +1 on the rank since enumerate starts at 0
+   println!("The total winnings for part 1 [{ans_1}]");
 }
