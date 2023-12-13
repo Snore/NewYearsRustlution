@@ -158,7 +158,7 @@ impl Hand {
         } else if count_vec.len() > 1 {
          // then add the joker count to the runner up and swap positions
          count_vec[1] += joker_count;
-         count_vec.swap(0, 1);
+         count_vec.remove(0); // delete the jokers as they're counted for already!
         } else {
          // don't add the joker count to anything, we have 5 jokers
         }
@@ -237,10 +237,10 @@ fn main() {
 
    // sort tht hands by rank
    hands.sort_unstable_by(|(a_hand, _a_bid), (b_hand, _b_bid)| a_hand.cmp(b_hand) );
+   // for hand in &hands { // Debugging
+   //    println!("{} | Bid: {}", hand.0, hand.1);
+   // }
    // then use each hand's index in 'hands' as multiplier with bid
-   for hand in &hands {
-      println!("{} | Bid: {}", hand.0, hand.1);
-   }
    let ans_1: u32 = hands.iter()
                          .enumerate()
                          .fold(0, |acc, (h_rank, (_h_hand, h_bid))| acc + (h_bid * (h_rank + 1) as u32)); // +1 on the rank since enumerate starts at 0
@@ -293,5 +293,14 @@ mod tests {
       let hand_1 = Hand::parse("J3456"); // make this low to pass
       let hand_2 = Hand::parse("33456");
       assert_eq!(hand_1.cmp(&hand_2), Ordering::Less);
+   }
+
+   #[test]
+   fn boris_test() {
+      let hand = Hand::parse("AJJ96");
+      assert_eq!(hand.hand_type, HandType::ThreeKind);
+
+      let hand = Hand::parse("KJ95J");
+      assert_eq!(hand.hand_type, HandType::ThreeKind);
    }
 }
