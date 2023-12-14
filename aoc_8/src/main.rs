@@ -12,7 +12,8 @@ enum Turn {
 #[derive(Debug)]
 
 struct Directions {
-    sequence: Vec<Turn>
+    sequence: Vec<Turn>,
+    counter: usize
 }
 
 impl Directions {
@@ -23,7 +24,17 @@ impl Directions {
                                                 'R' => Turn::Right,
                                                 _ => unreachable!(),
                                             }).collect();
-        Directions{ sequence: (parsed_turns) }
+        assert!(!parsed_turns.is_empty());
+        Directions{ sequence: (parsed_turns), counter : (0) }
+    }
+
+    /// Returns the next move the system should do as perscribed by the sequence
+    /// 
+    /// This will loop indefinitely
+    pub fn get_next_step( &mut self ) -> &Turn {
+        let next_move: usize = self.counter;
+        self.counter = (self.counter + 1) % self.sequence.len();
+        &self.sequence[next_move]
     }
 }
 
@@ -49,6 +60,15 @@ impl Map {
         Map { paths: (path_map) }
     }
 
+    /// Returns the destination given the starting junction and the direction to go
+    pub fn get_destination( &self, current_loc: &String, direction: &Turn ) -> String {
+        let junction = self.paths.get(current_loc).unwrap();
+        match direction {
+            Turn::Left => junction.left.clone(),
+            Turn::Right => junction.right.clone(),
+        }
+    }
+
     /// Parses a line from the map section of the input
     /// 
     /// Expects the input to be in "AAA = (BBB, CCC)" form
@@ -72,8 +92,19 @@ fn main() {
     let (directions_raw, map_raw) = map_directions_raw.split_once("\n\n").unwrap();
 
     // parse input
-    let my_directions: Directions = Directions::parse(directions_raw);
+    let mut my_directions: Directions = Directions::parse(directions_raw);
     let my_map: Map = Map::parse(map_raw);
 
-    println!("{:?}\n{:?}", my_directions.sequence, my_map.paths);
+   //  println!("{:?}\n{:?}", my_directions.sequence, my_map.paths);
+
+    // solve part 1
+    let target_location: String = "ZZZ".to_string();
+    let mut current_location: String = "AAA".to_string();
+    let mut steps: u32 = 0;
+    while current_location != target_location {
+       current_location = my_map.get_destination(&current_location, my_directions.get_next_step());
+       steps += 1;
+    }
+
+    println!("Number of moves needed is [{steps}]");
 }
