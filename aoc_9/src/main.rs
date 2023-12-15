@@ -29,6 +29,10 @@ impl EcoReading {
       Self::extrapolate_recurse(&self.readings) + self.readings.last().unwrap()
    }
 
+   pub fn extrapolate_prev_reading( &self ) -> i32 {
+      self.readings.first().unwrap() - Self::extrapolate_recurse_backwards(&self.readings)
+   }
+
    fn extrapolate_recurse( readings: &Vec<i32> ) -> i32 {
       let mut sub_readings: Vec<i32> = Vec::with_capacity(readings.len());
       for delta_pair in readings.windows(2) {
@@ -40,6 +44,20 @@ impl EcoReading {
       } else {
          let last_reading: i32 = *sub_readings.last().unwrap();
          return last_reading + Self::extrapolate_recurse(&sub_readings);
+      }
+   }
+
+   fn extrapolate_recurse_backwards( readings: &Vec<i32> ) -> i32 {
+      let mut sub_readings: Vec<i32> = Vec::with_capacity(readings.len());
+      for delta_pair in readings.windows(2) {
+         sub_readings.push(delta_pair[1] - delta_pair[0]);
+      }
+
+      if sub_readings.iter().all(|sr| *sr == 0 ) {
+         return 0;
+      } else {
+         let first_reading: i32 = *sub_readings.first().unwrap();
+         return first_reading - Self::extrapolate_recurse_backwards(&sub_readings);
       }
    }
 }
@@ -65,4 +83,7 @@ fn main() {
    let ans_1: i32 = eco_readings.iter()
                                 .fold(0, |acc, e| acc + e.extrapolate_next_reading());
    println!("The sum of the extrapolated readings is [{ans_1}]");
+
+   let ans_2: i32 = eco_readings.iter().fold(0, |acc, e| acc + e.extrapolate_prev_reading());
+   println!("The sum of the historical readings is [{ans_2}]");
 }
