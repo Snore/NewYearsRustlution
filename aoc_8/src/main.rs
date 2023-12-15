@@ -1,5 +1,6 @@
 use std::fs;
 use std::env;
+use num::integer::lcm;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -88,6 +89,28 @@ impl Map {
     }
 }
 
+/// Takes a starting location, a map, and a direction set, and calculate the number of steps needed to get to a 'Z'
+/// node from the starting location.
+fn go_home( starting_loc: &String, my_map: &Map, my_directions: &mut Directions ) -> u64 {
+    let mut steps: u64 = 0;
+    let mut current_location: String = starting_loc.clone();
+    while !current_location.ends_with('Z') {
+        let destination = my_map.get_destination(&current_location, my_directions.get_next_step());
+        match destination {
+            Some(destination) => {
+                current_location = destination;
+                steps += 1;
+            },
+            None => {
+                steps = 0;
+                break; // unsolvable. just break out
+            },
+        }
+    }
+
+    return steps;
+}
+
 fn main() {
     // get input
     let args: Vec<String> = env::args().collect();
@@ -125,33 +148,29 @@ fn main() {
     println!("Number of moves needed for part 1 is [{steps}]");
 
     // solve part 2
-    steps = 0;
     my_directions.reset();
     let timing_start: Instant = Instant::now();
-    let mut current_locations: Vec<String> = my_map.get_all_nodes()
+    let current_locations: Vec<String> = my_map.get_all_nodes()
                                                    .into_iter()
                                                    .filter(|n| n.ends_with('A'))
                                                    .collect();
-    while !current_locations.iter()
-                            .all(|l| l.ends_with('Z')) {
-        // note the turn to take so that all nodes can use the same direction in the same step
-        let next_turn: &Turn = my_directions.get_next_step();
-        current_locations.iter_mut()
-                         .for_each(|l| *l = my_map.get_destination(l, next_turn).unwrap());
-        steps += 1;
-    }
+    // This takes too long!
+    // while !current_locations.iter()
+    //                         .all(|l| l.ends_with('Z')) {
+    //     // note the turn to take so that all nodes can use the same direction in the same step
+    //     let next_turn: &Turn = my_directions.get_next_step();
+    //     current_locations.iter_mut()
+    //                      .for_each(|l| *l = my_map.get_destination(l, next_turn).unwrap());
+    //     steps += 1;
+    // }
 
-    // Idea:
-    // this takes too long.  maybe i can identify cycles and once i establish the cycles of all starting nodes
-    // I can just find the cycle they all share by multiplying them all together.
-
-    // run single runner two steps
-    // compare first half of array and back half
-    // repeat until above is satisfied
-    // cut recording in half, don't need the duplicate.
-    // find the indecies that end in 'Z'
-    // ???
+    // find the number of steps each starting location would take to get to their first Z node.
+    // we're really banking on these cycles only having one 'Z' node ^_^:;
+    let steps_for_locations: Vec<u64> = current_locations.iter().map(|sl| go_home(&sl, &my_map, &mut my_directions)).collect();
+    
+    // find the least common multiple of all the starting nodes to their first Z node for the answer
+    let answer: u64 = steps_for_locations.iter().fold(1, |acc, n| lcm(acc, *n));
 
     let elapsed: std::time::Duration = timing_start.elapsed();
-    println!("Number of ghost moves needed for part 2 is [{steps}] spooky steps.\nThis took {elapsed:?} to complete.");
+    println!("Number of ghost moves needed for part 2 is [{answer}] spooky steps.\nThis took {elapsed:?} to complete.");
 }
