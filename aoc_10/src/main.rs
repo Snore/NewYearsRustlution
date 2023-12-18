@@ -1,7 +1,7 @@
 use std::fs;
 use std::env;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct MapCoord {
     row: usize,
     col: usize
@@ -137,7 +137,7 @@ impl PipeMap {
         }
     }
 
-    fn get_map_coord_above( &self, coord: &MapCoord ) -> Option<MapCoord> {
+    pub fn get_map_coord_above( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.row == 0 {
             None
         } else {
@@ -145,7 +145,7 @@ impl PipeMap {
         }
     }
 
-    fn get_map_coord_below( &self, coord: &MapCoord ) -> Option<MapCoord> {
+    pub fn get_map_coord_below( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.row == self.rows {
             None
         } else {
@@ -153,7 +153,7 @@ impl PipeMap {
         }
     }
 
-    fn get_map_coord_left_of( &self, coord: &MapCoord ) -> Option<MapCoord> {
+    pub fn get_map_coord_left_of( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.col == 0 {
             None
         } else {
@@ -161,7 +161,7 @@ impl PipeMap {
         }
     }
 
-    fn get_map_coord_right_of( &self, coord: &MapCoord ) -> Option<MapCoord> {
+    pub fn get_map_coord_right_of( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.col == self.cols {
             None
         } else {
@@ -170,6 +170,62 @@ impl PipeMap {
     }
 
     // IDEA: make function that returns iter() for all cardinal directions around 'S'?
+}
+
+enum Direction {
+   Up,
+   Down,
+   Left,
+   Right
+}
+
+struct MapWalker<'a> {
+   map: &'a PipeMap,
+   last_pos: MapCoord,
+   cur_pos: MapCoord,
+   walk_counter: u32
+}
+
+impl<'a> MapWalker<'a> {
+   pub fn new( map: &'a PipeMap, start_pos: MapCoord, dir: Direction ) -> MapWalker {
+      let mut mw = MapWalker { map: (map), last_pos: (start_pos), cur_pos: (start_pos), walk_counter: (0) };
+      mw.shove(dir);
+      mw
+   }
+
+   fn shove( &mut self, dir: Direction ) {
+      self.last_pos = self.cur_pos;
+
+      match dir {
+         Direction::Up => {
+            self.cur_pos =  self.map.get_map_coord_above(&self.cur_pos).unwrap();
+         },
+         Direction::Down => {
+            self.cur_pos =  self.map.get_map_coord_below(&self.cur_pos).unwrap();
+         },
+         Direction::Left => {
+            self.cur_pos =  self.map.get_map_coord_left_of(&self.cur_pos).unwrap();
+         },
+         Direction::Right => {
+            self.cur_pos =  self.map.get_map_coord_right_of(&self.cur_pos).unwrap();
+         },
+      }
+
+      self.walk_counter += 1;
+   }
+
+   pub fn step( &mut self ) -> bool {
+      let next_pos = self.map.transit_pipe(self.last_pos, self.cur_pos);
+      match next_pos {
+         Some(next_pos) => {
+            self.last_pos = self.cur_pos;
+            self.cur_pos = next_pos;
+            self.walk_counter += 1;
+            true
+         },
+         None => false,
+      }
+   }
 }
 
 fn main() {
@@ -188,12 +244,20 @@ fn main() {
     let starting_loc: MapCoord = pipes.get_map_coord('S').unwrap();
     println!("Starting location for S [{starting_loc:?}]");
 
-    // ok, game plan
-    // grab width and height of the input.
-    // make psudo 2d vector over the input.
-    // use the input as the graph.
-    // REMEMBER TO IGNORE THE '\n', or strip them!!!
-    // can use switch statement in order to navigate based on the character.
+    let mut walkers: Vec<MapWalker> = vec![MapWalker::new(&pipes, starting_loc, Direction::Up),
+                                           MapWalker::new(&pipes, starting_loc, Direction::Down),
+                                           MapWalker::new(&pipes, starting_loc, Direction::Left),
+                                           MapWalker::new(&pipes, starting_loc, Direction::Right)];
+
+    loop {
+       if walkers.iter_mut().all(|mw| !mw.step()) {
+         break;
+       }
+    }
+
+    for mw in walkers {
+      println!("steps: [{}]", mw.walk_counter);
+    }
 }
 
 #[cfg(test)]
