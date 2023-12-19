@@ -60,65 +60,85 @@ impl PipeMap {
 
     pub fn transit_pipe( &self, 
                          from_pos: MapCoord, 
-                         cur_pos: MapCoord ) -> Option<MapCoord> {
+                         cur_pos: MapCoord ) -> Direction {
+        // TODO if from_pos == cur_pos then we're stuck, too
+        // Maybe make this Result<Direction, MoveErr>?
         match self.get_cell(&cur_pos) {
             // is this "fast" Rust? correct "Rust"? idk.
             Some('|') => {
                 if cur_pos.is_above(&from_pos) {
-                    Self::get_map_coord_above(&self, &cur_pos)
+                    // Self::get_map_coord_above(&self, &cur_pos)
+                    Direction::Up
                 } else if cur_pos.is_below(&from_pos) {
-                    Self::get_map_coord_below(&self, &cur_pos)
+                    // Self::get_map_coord_below(&self, &cur_pos)
+                    Direction::Down
                 } else {
-                    None
+                    // None
+                    Direction::Stuck
                 }
             },
             Some('-') => {
                 if cur_pos.is_left_of(&from_pos) {
-                    Self::get_map_coord_left_of(&self, &cur_pos)
+                    // Self::get_map_coord_left_of(&self, &cur_pos)
+                    Direction::Left
                 } else if cur_pos.is_right_of(&from_pos) {
-                    Self::get_map_coord_right_of(&self, &cur_pos)
+                    // Self::get_map_coord_right_of(&self, &cur_pos)
+                    Direction::Right
                 } else {
-                    None
+                    // None
+                    Direction::Stuck
                 }
             },
             Some('L') => {
                 if cur_pos.is_left_of(&from_pos) {
-                    Self::get_map_coord_above(&self, &cur_pos)
+                    // Self::get_map_coord_above(&self, &cur_pos)
+                    Direction::Up
                 } else if cur_pos.is_below(&from_pos) {
-                    Self::get_map_coord_right_of(&self, &cur_pos)
+                    // Self::get_map_coord_right_of(&self, &cur_pos)
+                    Direction::Right
                 } else {
-                    None
+                    // None
+                    Direction::Stuck
                 }
             },
             Some('J') => {
                 if cur_pos.is_right_of(&from_pos) {
-                    Self::get_map_coord_above(&self, &cur_pos)
+                    // Self::get_map_coord_above(&self, &cur_pos)
+                    Direction::Up
                 } else if cur_pos.is_below(&from_pos) {
-                    Self::get_map_coord_left_of(&self, &cur_pos)
+                    // Self::get_map_coord_left_of(&self, &cur_pos)
+                    Direction::Left
                 } else {
-                    None
+                    // None
+                    Direction::Stuck
                 }
             },
             Some('7') => {
                 if cur_pos.is_right_of(&from_pos) {
-                    Self::get_map_coord_below(&self, &cur_pos)
+                    // Self::get_map_coord_below(&self, &cur_pos)
+                    Direction::Down
                 } else if cur_pos.is_above(&from_pos) {
-                    Self::get_map_coord_left_of(&self, &cur_pos)
+                    // Self::get_map_coord_left_of(&self, &cur_pos)
+                    Direction::Left
                 } else {
-                    None
+                    // None
+                    Direction::Stuck
                 }
             },
             Some('F') => {
                 if cur_pos.is_left_of(&from_pos) {
-                    Self::get_map_coord_below(&self, &cur_pos)
+                    // Self::get_map_coord_below(&self, &cur_pos)
+                    Direction::Down
                 } else if cur_pos.is_above(&from_pos) {
-                    Self::get_map_coord_right_of(&self, &cur_pos)
+                    // Self::get_map_coord_right_of(&self, &cur_pos)
+                    Direction::Right
                 } else {
-                    None
+                    // None
+                    Direction::Stuck
                 }
             }
-            Some('.') => None,
-            Some('S') => None,
+            Some('.') => Direction::Stuck,
+            Some('S') => Direction::Goal,
             _ => unreachable!(),
         }
     }
@@ -172,11 +192,14 @@ impl PipeMap {
     // IDEA: make function that returns iter() for all cardinal directions around 'S'?
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
 enum Direction {
    Up,
    Down,
    Left,
-   Right
+   Right,
+   Stuck,
+   Goal
 }
 
 struct MapWalker<'a> {
@@ -193,38 +216,37 @@ impl<'a> MapWalker<'a> {
       mw
    }
 
-   fn shove( &mut self, dir: Direction ) {
-      self.last_pos = self.cur_pos;
-
-      match dir {
-         Direction::Up => {
-            self.cur_pos =  self.map.get_map_coord_above(&self.cur_pos).unwrap();
-         },
-         Direction::Down => {
-            self.cur_pos =  self.map.get_map_coord_below(&self.cur_pos).unwrap();
-         },
-         Direction::Left => {
-            self.cur_pos =  self.map.get_map_coord_left_of(&self.cur_pos).unwrap();
-         },
-         Direction::Right => {
-            self.cur_pos =  self.map.get_map_coord_right_of(&self.cur_pos).unwrap();
-         },
+   fn relocate( &mut self, pos: Option<MapCoord> ) {
+      if pos.is_some() {
+         self.last_pos = self.cur_pos;
+         self.cur_pos = pos.unwrap();
+         self.walk_counter += 1; 
       }
-
-      self.walk_counter += 1;
    }
 
-   pub fn step( &mut self ) -> bool {
-      let next_pos = self.map.transit_pipe(self.last_pos, self.cur_pos);
-      match next_pos {
-         Some(next_pos) => {
-            self.last_pos = self.cur_pos;
-            self.cur_pos = next_pos;
-            self.walk_counter += 1;
-            true
+   fn shove( &mut self, dir: Direction ) {
+      match dir {
+         Direction::Up => {
+            Self::relocate(self, self.map.get_map_coord_above(&self.cur_pos) );
          },
-         None => false,
+         Direction::Down => {
+            Self::relocate(self, self.map.get_map_coord_below(&self.cur_pos) );
+         },
+         Direction::Left => {
+            Self::relocate(self, self.map.get_map_coord_left_of(&self.cur_pos) );
+         },
+         Direction::Right => {
+            Self::relocate(self, self.map.get_map_coord_right_of(&self.cur_pos) );
+         },
+         Direction::Stuck => {},
+         Direction::Goal => {},
       }
+   }
+
+   pub fn step( &mut self ) -> Direction {
+      let next_direction = self.map.transit_pipe(self.last_pos, self.cur_pos);
+      Self::shove(self, next_direction);
+      next_direction
    }
 }
 
@@ -250,7 +272,7 @@ fn main() {
                                            MapWalker::new(&pipes, starting_loc, Direction::Right)];
 
     loop {
-       if walkers.iter_mut().all(|mw| !mw.step()) {
+       if walkers.iter_mut().any(|mw| mw.step() == Direction::Goal ) {
          break;
        }
     }
