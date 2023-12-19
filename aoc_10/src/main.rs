@@ -1,7 +1,8 @@
 use std::fs;
 use std::env;
+use std::time::Instant;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MapCoord {
     row: usize,
     col: usize
@@ -244,7 +245,13 @@ impl<'a> MapWalker<'a> {
    }
 
    pub fn step( &mut self ) -> Direction {
-      let next_direction = self.map.transit_pipe(self.last_pos, self.cur_pos);
+      let next_direction: Direction = if self.cur_pos != self.last_pos { 
+         self.map.transit_pipe(self.last_pos, self.cur_pos)
+      } else {
+         // We have a walker that is stuck in place
+         Direction::Stuck
+      };
+
       Self::shove(self, next_direction);
       next_direction
    }
@@ -261,24 +268,26 @@ fn main() {
 
     let pipes: PipeMap = PipeMap::parse(&pipes_raw);
 
-    // println!("{pipes:?}"); // DEBUG
-
     let starting_loc: MapCoord = pipes.get_map_coord('S').unwrap();
     println!("Starting location for S [{starting_loc:?}]");
 
+    // make a walker for each of the cardinal directions
     let mut walkers: Vec<MapWalker> = vec![MapWalker::new(&pipes, starting_loc, Direction::Up),
                                            MapWalker::new(&pipes, starting_loc, Direction::Down),
                                            MapWalker::new(&pipes, starting_loc, Direction::Left),
                                            MapWalker::new(&pipes, starting_loc, Direction::Right)];
 
-    loop {
-       if walkers.iter_mut().any(|mw| mw.step() == Direction::Goal ) {
-         break;
+    // run until one of the walkers reaches the the 'S' again
+    let timing_start: Instant = Instant::now();
+    'outer: loop {
+       for walker in &mut walkers {
+         if walker.step() == Direction::Goal {
+            let furthest: u32 = walker.walk_counter / 2;
+            let elapsed: std::time::Duration = timing_start.elapsed();
+            println!("The furthest sport from the start is [{furthest}] taking [{elapsed:?}]");
+            break 'outer;
+         }
        }
-    }
-
-    for mw in walkers {
-      println!("steps: [{}]", mw.walk_counter);
     }
 }
 
