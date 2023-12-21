@@ -1,5 +1,6 @@
 use std::fs;
 use std::env;
+use std::fmt;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +42,23 @@ struct PipeMap {
     cols: usize
 }
 
+#[derive(Debug)]
+enum PipeMapError {
+   InvalidPipe,
+   BadTransit,
+}
+
+impl fmt::Display for PipeMapError {
+   fn fmt( &self, f: &mut fmt::Formatter ) -> fmt::Result {
+      match self {
+         PipeMapError::InvalidPipe => write!(f, "Invalid pipe junction detected."),
+         PipeMapError::BadTransit => write!(f, "Transit has no decernable direction."),
+      }
+   }
+}
+
+impl std::error::Error for PipeMapError {}
+
 impl PipeMap {
     pub fn parse( input: &str ) -> PipeMap {
         let row_count: usize = input.chars().filter(|c| *c == '\n').count() + 1; // assumes no line-return at end of input
@@ -61,85 +79,70 @@ impl PipeMap {
 
     pub fn transit_pipe( &self, 
                          from_pos: MapCoord, 
-                         cur_pos: MapCoord ) -> Direction {
-        // TODO if from_pos == cur_pos then we're stuck, too
+                         cur_pos: MapCoord ) -> Result<Direction, PipeMapError> {
+        if from_pos == cur_pos {
+            return Err(PipeMapError::BadTransit);
+        }
+
         // Maybe make this Result<Direction, MoveErr>?
         match self.get_cell(&cur_pos) {
             // is this "fast" Rust? correct "Rust"? idk.
             Some('|') => {
                 if cur_pos.is_above(&from_pos) {
-                    // Self::get_map_coord_above(&self, &cur_pos)
-                    Direction::Up
+                    Ok(Direction::Up)
                 } else if cur_pos.is_below(&from_pos) {
-                    // Self::get_map_coord_below(&self, &cur_pos)
-                    Direction::Down
+                    Ok(Direction::Down)
                 } else {
-                    // None
-                    Direction::Stuck
+                    Err(PipeMapError::InvalidPipe)
                 }
             },
             Some('-') => {
                 if cur_pos.is_left_of(&from_pos) {
-                    // Self::get_map_coord_left_of(&self, &cur_pos)
-                    Direction::Left
+                    Ok(Direction::Left)
                 } else if cur_pos.is_right_of(&from_pos) {
-                    // Self::get_map_coord_right_of(&self, &cur_pos)
-                    Direction::Right
+                    Ok(Direction::Right)
                 } else {
-                    // None
-                    Direction::Stuck
+                    Err(PipeMapError::InvalidPipe)
                 }
             },
             Some('L') => {
                 if cur_pos.is_left_of(&from_pos) {
-                    // Self::get_map_coord_above(&self, &cur_pos)
-                    Direction::Up
+                    Ok(Direction::Up)
                 } else if cur_pos.is_below(&from_pos) {
-                    // Self::get_map_coord_right_of(&self, &cur_pos)
-                    Direction::Right
+                    Ok(Direction::Right)
                 } else {
-                    // None
-                    Direction::Stuck
+                    Err(PipeMapError::InvalidPipe)
                 }
             },
             Some('J') => {
                 if cur_pos.is_right_of(&from_pos) {
-                    // Self::get_map_coord_above(&self, &cur_pos)
-                    Direction::Up
+                    Ok(Direction::Up)
                 } else if cur_pos.is_below(&from_pos) {
-                    // Self::get_map_coord_left_of(&self, &cur_pos)
-                    Direction::Left
+                    Ok(Direction::Left)
                 } else {
-                    // None
-                    Direction::Stuck
+                    Err(PipeMapError::InvalidPipe)
                 }
             },
             Some('7') => {
                 if cur_pos.is_right_of(&from_pos) {
-                    // Self::get_map_coord_below(&self, &cur_pos)
-                    Direction::Down
+                    Ok(Direction::Down)
                 } else if cur_pos.is_above(&from_pos) {
-                    // Self::get_map_coord_left_of(&self, &cur_pos)
-                    Direction::Left
+                    Ok(Direction::Left)
                 } else {
-                    // None
-                    Direction::Stuck
+                    Err(PipeMapError::InvalidPipe)
                 }
             },
             Some('F') => {
                 if cur_pos.is_left_of(&from_pos) {
-                    // Self::get_map_coord_below(&self, &cur_pos)
-                    Direction::Down
+                    Ok(Direction::Down)
                 } else if cur_pos.is_above(&from_pos) {
-                    // Self::get_map_coord_right_of(&self, &cur_pos)
-                    Direction::Right
+                    Ok(Direction::Right)
                 } else {
-                    // None
-                    Direction::Stuck
+                    Err(PipeMapError::InvalidPipe)
                 }
             }
-            Some('.') => Direction::Stuck,
-            Some('S') => Direction::Goal,
+            Some('.') => Ok(Direction::Stuck),
+            Some('S') => Ok(Direction::Goal),
             _ => unreachable!(),
         }
     }
@@ -203,58 +206,93 @@ enum Direction {
    Goal
 }
 
+#[derive(Clone)]
+struct PipePath {
+   pipe_locs: Vec<MapCoord>
+}
+
+impl PipePath {
+    fn push( &mut self, location: &MapCoord ) {
+        self.pipe_locs.push(*location);
+    }
+
+    fn len( &self ) -> usize {
+        self.pipe_locs.len()
+    }
+}
+
+#[derive(Clone)]
 struct MapWalker<'a> {
    map: &'a PipeMap,
    last_pos: MapCoord,
    cur_pos: MapCoord,
-   walk_counter: u32
+   path: PipePath
 }
 
 impl<'a> MapWalker<'a> {
-   pub fn new( map: &'a PipeMap, start_pos: MapCoord, dir: Direction ) -> MapWalker {
-      let mut mw = MapWalker { map: (map), last_pos: (start_pos), cur_pos: (start_pos), walk_counter: (0) };
-      mw.shove(dir);
-      mw
-   }
+    pub fn new( map: &'a PipeMap, start_pos: MapCoord, dir: Direction ) -> MapWalker {
+        let mut mw = MapWalker { map: (map), 
+                                                last_pos: (start_pos), 
+                                                cur_pos: (start_pos), 
+                                                path: ( PipePath { pipe_locs: ( vec![start_pos] ) } ) };
+        mw.shove(dir);
+        mw
+    }
 
-   fn relocate( &mut self, pos: Option<MapCoord> ) {
-      if pos.is_some() {
-         self.last_pos = self.cur_pos;
-         self.cur_pos = pos.unwrap();
-         self.walk_counter += 1; 
-      }
-   }
+    fn relocate( &mut self, pos: Option<MapCoord> ) {
+        if pos.is_some() {
+        
+        self.last_pos = self.cur_pos;
+        self.cur_pos = pos.unwrap();
+         
+        // append the next step to our path
+        self.path.push(&self.cur_pos);
+        }
+    }
 
-   fn shove( &mut self, dir: Direction ) {
-      match dir {
-         Direction::Up => {
-            Self::relocate(self, self.map.get_map_coord_above(&self.cur_pos) );
-         },
-         Direction::Down => {
-            Self::relocate(self, self.map.get_map_coord_below(&self.cur_pos) );
-         },
-         Direction::Left => {
-            Self::relocate(self, self.map.get_map_coord_left_of(&self.cur_pos) );
-         },
-         Direction::Right => {
-            Self::relocate(self, self.map.get_map_coord_right_of(&self.cur_pos) );
-         },
-         Direction::Stuck => {},
-         Direction::Goal => {},
-      }
-   }
+    fn shove( &mut self, dir: Direction ) {
+        match dir {
+            Direction::Up => {
+                Self::relocate(self, self.map.get_map_coord_above(&self.cur_pos) );
+            },
+            Direction::Down => {
+                Self::relocate(self, self.map.get_map_coord_below(&self.cur_pos) );
+            },
+            Direction::Left => {
+                Self::relocate(self, self.map.get_map_coord_left_of(&self.cur_pos) );
+            },
+            Direction::Right => {
+                Self::relocate(self, self.map.get_map_coord_right_of(&self.cur_pos) );
+            },
+            Direction::Stuck => {},
+            Direction::Goal => {},
+        }
+    }
 
-   pub fn step( &mut self ) -> Direction {
-      let next_direction: Direction = if self.cur_pos != self.last_pos { 
-         self.map.transit_pipe(self.last_pos, self.cur_pos)
-      } else {
-         // We have a walker that is stuck in place
-         Direction::Stuck
-      };
+    pub fn step( &mut self ) -> Direction {
+        let potential_direction = self.map.transit_pipe(self.last_pos, self.cur_pos);
+        let next_direction: Direction = match potential_direction {
+            Ok(direction) => direction,
+            Err(_) => Direction::Stuck,
+        };
 
-      Self::shove(self, next_direction);
-      next_direction
-   }
+        Self::shove(self, next_direction);
+        next_direction
+    }
+
+    /// Runs this MapWalker until it runs out of moves
+    pub fn explore( &mut self ) -> Direction {
+        let mut final_direction: Direction = Direction::Up;
+
+        // make a quick lambda that is only relevent to this function
+        let is_done = |d: Direction| d == Direction::Stuck || d == Direction::Goal;
+        // run until this walker is out of moves
+        while !is_done(final_direction) {
+            final_direction = self.step();
+        }
+
+        final_direction
+    }
 }
 
 fn main() {
@@ -279,16 +317,27 @@ fn main() {
 
     // run until one of the walkers reaches the the 'S' again
     let timing_start: Instant = Instant::now();
-    'outer: loop {
-       for walker in &mut walkers {
-         if walker.step() == Direction::Goal {
-            let furthest: u32 = walker.walk_counter / 2;
-            let elapsed: std::time::Duration = timing_start.elapsed();
-            println!("The furthest sport from the start is [{furthest}] taking [{elapsed:?}]");
-            break 'outer;
-         }
-       }
+
+    let mut best_walker: Option<&MapWalker> = None;
+    for walker in &mut walkers {
+        if walker.explore() == Direction::Goal {
+            best_walker = Some(walker);
+            break;
+        }
     }
+
+    let furthest: usize = best_walker.unwrap().path.len() / 2;
+    let elapsed: std::time::Duration = timing_start.elapsed();
+    println!("The furthest spot from the start is [{furthest}] taking [{elapsed:?}]");
+
+    // part 2 plan.
+    // - have walkers record their mapcoords
+    // - have PipeMap be able to take a Vec<MapCoord> (Pipe struct) and paint their map with it?
+    //   - build on this
+    // - do rasterize scanning.
+    //   - go left to right, if we see a pipe segment, count thet next chars until we se another pipe segment
+    //   - then turn it off
+    // - be able to mark pipe segments based off of a pipe map
 }
 
 #[cfg(test)]
