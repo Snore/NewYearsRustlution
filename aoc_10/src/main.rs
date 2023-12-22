@@ -4,8 +4,11 @@ use std::fmt;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A x,y coordinate on a 2D map
 struct MapCoord {
+    /// The X variable of this coordinate
     row: usize,
+    /// The Y variable of this coordinate
     col: usize
 }
 
@@ -37,9 +40,54 @@ impl MapCoord {
 
 #[derive(Debug)]
 struct PipeMap {
+    /// The raw map data represented in 1 dimension
     map: String,
+    /// The number of rows in this map
     rows: usize,
+    /// The number of columns in this map
     cols: usize
+}
+
+/// A map that projects a PipePath onto a PipeMap
+struct PathMap {
+    map: Vec<char>,
+    rows: usize,
+    cols: usize,
+}
+
+impl PathMap {
+    /// Creates a PathMap from a PipePath and a PipeMap
+    pub fn create( origin: &PipeMap, path: &PipePath ) -> PathMap {
+        // fill the map to size with default variable
+        let mut canvas: Vec<char> = vec!['.'; origin.map.len()];
+
+        // mark all of the nodes that path lies on with an 'X'
+        for cell in &path.pipe_locs {
+            // calculate the position in 1D
+            let spot: usize = (cell.row * origin.cols) + cell.col;
+            canvas[spot] = 'X';
+        }
+        PathMap { map: (canvas), rows: (origin.rows), cols: (origin.cols) }
+    }
+
+    /// Counts the number of cells surrounded by the path in this PathMap
+    /// 
+    /// Made this mut do I can draw the cells for debugging
+    pub fn count_inner_cells( &mut self ) -> usize {
+        7
+    }
+}
+
+impl fmt::Display for PathMap {
+    fn fmt( &self, f: &mut fmt::Formatter ) -> fmt::Result {
+        for row in self.map.chunks(self.cols) {
+            for char in row{
+                write!(f, "{}", char)?;
+            }
+            write!(f, "{}", "\n")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -192,8 +240,6 @@ impl PipeMap {
             Some( MapCoord { row: (coord.row), col: (coord.col + 1) } )
         }
     }
-
-    // IDEA: make function that returns iter() for all cardinal directions around 'S'?
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -293,6 +339,11 @@ impl<'a> MapWalker<'a> {
 
         final_direction
     }
+
+    /// Returns a copy of the path this walker traveled
+    pub fn get_path( &self ) -> PipePath {
+        self.path.clone()
+    }
 }
 
 fn main() {
@@ -316,7 +367,7 @@ fn main() {
                                            MapWalker::new(&pipes, starting_loc, Direction::Right)];
 
     // run until one of the walkers reaches the the 'S' again
-    let timing_start: Instant = Instant::now();
+    let timing_start_1: Instant = Instant::now();
 
     let mut best_walker: Option<&MapWalker> = None;
     for walker in &mut walkers {
@@ -327,8 +378,20 @@ fn main() {
     }
 
     let furthest: usize = best_walker.unwrap().path.len() / 2;
-    let elapsed: std::time::Duration = timing_start.elapsed();
-    println!("The furthest spot from the start is [{furthest}] taking [{elapsed:?}]");
+    let elapsed_1: std::time::Duration = timing_start_1.elapsed();
+
+    // start part 2
+    let timing_start_2: Instant = Instant::now();
+    // create a new map that has the pipe cells 'X'ed out
+    let mut pipe_drawing: PathMap = PathMap::create(&pipes, &best_walker.unwrap().path);
+
+    let inner_node_count: usize = pipe_drawing.count_inner_cells();
+    let elapsed_2: std::time::Duration = timing_start_2.elapsed();
+
+    // print answers
+    println!("{pipe_drawing}");
+    println!("The furthest spot from the start is [{furthest}] taking [{elapsed_1:?}]");
+    println!("The number of nodes surrounded by the pipe is [{inner_node_count}] taking [{elapsed_2:?}]");
 
     // part 2 plan.
     // - have walkers record their mapcoords
