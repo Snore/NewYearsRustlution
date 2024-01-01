@@ -41,7 +41,7 @@ impl MapCoord {
 #[derive(Debug)]
 struct PipeMap {
     /// The raw map data represented in 1 dimension
-    map: String,
+    map: Vec<char>,
     /// The number of rows in this map
     rows: usize,
     /// The number of columns in this map
@@ -51,11 +51,17 @@ struct PipeMap {
 /// A map that projects a PipePath onto a PipeMap
 struct PathMap {
     map: Vec<char>,
-    rows: usize,
     cols: usize,
 }
 
 impl PathMap {
+    /// Char denoting a pipe piece is occupying the slot
+    const PIPE_CHAR_ANY: char = 'X';
+    const PIPE_CHAR_VERT: char = '|';
+    const PIPE_CHAR_HORZ: char = '-';
+    const PIPE_CHAR_BEND_UP: char = '^';
+    const PIPE_CHAR_BEND_DOWN: char = 'V';
+
     /// Creates a PathMap from a PipePath and a PipeMap
     pub fn create( origin: &PipeMap, path: &PipePath ) -> PathMap {
         // fill the map to size with default variable
@@ -65,16 +71,99 @@ impl PathMap {
         for cell in &path.pipe_locs {
             // calculate the position in 1D
             let spot: usize = (cell.row * origin.cols) + cell.col;
-            canvas[spot] = 'X';
+            let symbol: char = origin.get_cell(cell).unwrap();
+            canvas[spot] = match symbol {
+               Self::PIPE_CHAR_VERT => Self::PIPE_CHAR_VERT,
+               'L' | 'J' => Self::PIPE_CHAR_BEND_UP,
+               'F' | '7' => Self::PIPE_CHAR_BEND_DOWN,
+               'S' => Self::PIPE_CHAR_ANY,
+               _ => Self::PIPE_CHAR_HORZ,
+            };
         }
-        PathMap { map: (canvas), rows: (origin.rows), cols: (origin.cols) }
+        PathMap { map: (canvas), cols: (origin.cols) }
     }
 
     /// Counts the number of cells surrounded by the path in this PathMap
     /// 
     /// Made this mut do I can draw the cells for debugging
     pub fn count_inner_cells( &mut self ) -> usize {
-        7
+        let mut inside_counter: usize = 0;
+        let mut inside_cache: usize = 0;
+        let mut is_inside: bool = false;
+        let mut is_slidding: char = Self::PIPE_CHAR_ANY;
+        // WATCH THE 'S'
+        // TODO figure out what the 'S' should be.
+
+        // maybe i should just collect the is_inside and not cache them in until i hit an end marker
+        for row_slice in self.map.chunks_mut(self.cols) {
+            for c in row_slice {
+                // things to look for:
+                // 1. '|'
+                // 2. 'V' / 'VV' / 'V-V'
+
+                // this could just be a `match` block but idk what's prefered
+                if *c == Self::PIPE_CHAR_VERT {
+                    // toggle the inside activator!
+                    if is_inside {
+                        inside_counter += inside_cache;
+                        inside_cache = 0;
+                     }
+                     is_inside = !is_inside;
+                  } else if *c == Self::PIPE_CHAR_HORZ {
+                     continue;
+                  } else if *c == Self::PIPE_CHAR_BEND_UP {
+                     if is_slidding == Self::PIPE_CHAR_ANY {
+                        // nothing to up means we started a slide
+                        is_slidding = Self::PIPE_CHAR_BEND_UP;
+                     } else if is_slidding == Self::PIPE_CHAR_BEND_UP {
+                        // up to up means we want to leave the 'is_inside' variable and reset the slidding marker
+                        is_slidding = Self::PIPE_CHAR_ANY;
+                     }
+                     else {
+                        //up to down means we crossed the pipe threshold and want to take action.
+                        is_slidding = Self::PIPE_CHAR_ANY;
+                        if is_inside {
+                           inside_counter += inside_cache;
+                           inside_cache = 0;
+                        }
+                        is_inside = !is_inside;
+                     }
+                  } else if *c == Self::PIPE_CHAR_BEND_DOWN {
+                     // a "slide" is a stretch of horizontal pip parts that begin and end with a bend.
+                     // if the next char is not a pipe, then it's safe to assume this is a end of the slide as we cannot have one bend
+                     if is_slidding == Self::PIPE_CHAR_ANY {
+                        // nothing to up means we started a slide
+                        is_slidding = Self::PIPE_CHAR_BEND_DOWN;
+                     } else if is_slidding == Self::PIPE_CHAR_BEND_DOWN {
+                        // up to up means we want to leave the 'is_inside' variable and reset the slidding marker
+                        is_slidding = Self::PIPE_CHAR_ANY;
+                     }
+                     else {
+                        //down to up means we crossed the pipe threshold and want to take action.
+                        is_slidding = Self::PIPE_CHAR_ANY;
+                        if is_inside {
+                           inside_counter += inside_cache;
+                           inside_cache = 0;
+                        }
+                        is_inside = !is_inside;
+                     }
+                  } else {
+                    if is_inside {
+                        // count this cell as inside
+                        inside_cache += 1;
+                        // color it for debugging
+                        *c = 'I';
+                     }
+                  }
+            }
+
+            // reset inside counter
+            is_inside = false;
+            inside_cache = 0;
+            is_slidding = Self::PIPE_CHAR_ANY;
+        }
+        
+        inside_counter
     }
 }
 
@@ -112,14 +201,14 @@ impl PipeMap {
         let row_count: usize = input.chars().filter(|c| *c == '\n').count() + 1; // assumes no line-return at end of input
         let col_count: usize = input.find('\n').unwrap();
 
-        let pipes_graph: String = input.chars().filter(|c| *c != '\n').collect();
+        let pipes_graph: Vec<char> = input.chars().filter(|c| *c != '\n').collect();
 
         PipeMap{ map: ( pipes_graph ), rows: (row_count), cols: (col_count) }
     }
 
     /// Gets the MapCoord of the first char in the map that equals "find_me"
     pub fn get_map_coord( &self, find_me: char ) -> Option<MapCoord> {
-        let location: usize = self.map.find(find_me)?;
+        let location: usize = self.map.iter().position(|c: &char| *c == find_me)?;
         let row: usize = location / self.cols;
         let col: usize = location % self.cols;
         Some( MapCoord { row: (row), col: (col) } )
@@ -205,7 +294,7 @@ impl PipeMap {
             None
         } else {
             let flat_pos: usize = loc.row * self.cols + loc.col;
-            self.map.chars().nth(flat_pos)
+            Some( self.map[flat_pos] )
         }
     }
 
@@ -338,11 +427,6 @@ impl<'a> MapWalker<'a> {
         }
 
         final_direction
-    }
-
-    /// Returns a copy of the path this walker traveled
-    pub fn get_path( &self ) -> PipePath {
-        self.path.clone()
     }
 }
 
