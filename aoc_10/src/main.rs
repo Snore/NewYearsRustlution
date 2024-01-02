@@ -36,6 +36,22 @@ impl MapCoord {
         other.row == self.row && 
         (other.col + 1) == self.col
     }
+
+    /// Returns the Direction that is MapCoord is relative to other
+    /// 
+    /// Returns None if other is not adjacent to this
+    pub fn get_rel_pos_of( &self, other: &MapCoord ) -> Option<Direction> {
+        if self.is_above(other) {
+            return Some(Direction::Up);
+        } else if self.is_below(other) {
+            return Some(Direction::Down);
+        } else if self.is_left_of(other) {
+            return Some(Direction::Left);
+        } else if self.is_right_of(other) {
+            return Some(Direction::Right);
+        }
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -76,30 +92,48 @@ impl PathMap {
                Self::PIPE_CHAR_VERT => Self::PIPE_CHAR_VERT,
                'L' | 'J' => Self::PIPE_CHAR_BEND_UP,
                'F' | '7' => Self::PIPE_CHAR_BEND_DOWN,
-               'S' => Self::PIPE_CHAR_ANY,
+               'S' => {
+                    // Locate the first step and last step of the path as this path is a loop and these two will connect to the start position
+                    // since this should be a loop, this path's first and last element is the starting position
+                    let loc_of_unknown: &MapCoord = &path.pipe_locs[0];
+                    let first_loc: &MapCoord = &path.pipe_locs[1];
+                    let last_loc: &MapCoord = &path.pipe_locs[path.len() - 2];
+
+                    // figure out the start position based on the two connecting pipe pieces
+                    Self::assess_pipe_connection(loc_of_unknown, 
+                                                 first_loc, 
+                                                 last_loc).unwrap()
+               },
                _ => Self::PIPE_CHAR_HORZ,
             };
         }
         PathMap { map: (canvas), cols: (origin.cols) }
     }
 
+    /// Takes two MapCoord and a pipe map and decerns what the pipe part must be connecting the two MapCoords
+    fn assess_pipe_connection( loc_of_unkown: &MapCoord, 
+                              loc_first_piece: &MapCoord, 
+                              loc_second_piece: &MapCoord ) -> Option<char> {
+        let rel_dir_to_first: Direction = loc_first_piece.get_rel_pos_of(loc_of_unkown).unwrap();
+        let rel_dir_to_second: Direction = loc_second_piece.get_rel_pos_of(loc_of_unkown).unwrap();
+
+        match (rel_dir_to_first, rel_dir_to_second) {
+            (Direction::Down, Direction::Up) | (Direction::Up, Direction::Down) => Some(Self::PIPE_CHAR_VERT),
+            (Direction::Down, _) | (_, Direction::Down) => Some(Self::PIPE_CHAR_BEND_DOWN),
+            (Direction::Up, _) | (_, Direction::Up) => Some(Self::PIPE_CHAR_BEND_UP),
+            _ => Some(Self::PIPE_CHAR_HORZ)
+        }
+    }
+
     /// Counts the number of cells surrounded by the path in this PathMap
-    /// 
-    /// Made this mut do I can draw the cells for debugging
-    pub fn count_inner_cells( &mut self ) -> usize {
+    pub fn count_inner_cells( &self ) -> usize {
         let mut inside_counter: usize = 0;
         let mut inside_cache: usize = 0;
         let mut is_inside: bool = false;
         let mut is_slidding: char = Self::PIPE_CHAR_ANY;
-        // WATCH THE 'S'
-        // TODO figure out what the 'S' should be.
 
-        // maybe i should just collect the is_inside and not cache them in until i hit an end marker
-        for row_slice in self.map.chunks_mut(self.cols) {
+        for row_slice in self.map.chunks(self.cols) {
             for c in row_slice {
-                // things to look for:
-                // 1. '|'
-                // 2. 'V' / 'VV' / 'V-V'
 
                 // this could just be a `match` block but idk what's prefered
                 if *c == Self::PIPE_CHAR_VERT {
@@ -152,7 +186,7 @@ impl PathMap {
                         // count this cell as inside
                         inside_cache += 1;
                         // color it for debugging
-                        *c = 'I';
+                        // *c = 'I';
                      }
                   }
             }
@@ -298,6 +332,7 @@ impl PipeMap {
         }
     }
 
+    /// Returns the MapCoord above the provided MapCoord, or None if we walked off the map
     pub fn get_map_coord_above( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.row == 0 {
             None
@@ -306,6 +341,7 @@ impl PipeMap {
         }
     }
 
+    /// Returns the MapCoord below the provided MapCoord, or None if we walked off the map
     pub fn get_map_coord_below( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.row == self.rows {
             None
@@ -314,6 +350,7 @@ impl PipeMap {
         }
     }
 
+    /// Returns the MapCoord to the left of the provided MapCoord, or None if we walked off the map
     pub fn get_map_coord_left_of( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.col == 0 {
             None
@@ -322,6 +359,7 @@ impl PipeMap {
         }
     }
 
+    /// Returns the MapCoord to the right of the provided MapCoord, or None if we walked off the map
     pub fn get_map_coord_right_of( &self, coord: &MapCoord ) -> Option<MapCoord> {
         if coord.col == self.cols {
             None
@@ -331,7 +369,7 @@ impl PipeMap {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 enum Direction {
    Up,
    Down,
@@ -342,6 +380,9 @@ enum Direction {
 }
 
 #[derive(Clone)]
+/// A vector of coordinates denoting the path along a map.
+/// 
+/// The first element is the starting block, the last is where the walker finished.
 struct PipePath {
    pipe_locs: Vec<MapCoord>
 }
@@ -467,7 +508,7 @@ fn main() {
     // start part 2
     let timing_start_2: Instant = Instant::now();
     // create a new map that has the pipe cells 'X'ed out
-    let mut pipe_drawing: PathMap = PathMap::create(&pipes, &best_walker.unwrap().path);
+    let pipe_drawing: PathMap = PathMap::create(&pipes, &best_walker.unwrap().path);
 
     let inner_node_count: usize = pipe_drawing.count_inner_cells();
     let elapsed_2: std::time::Duration = timing_start_2.elapsed();
@@ -476,15 +517,6 @@ fn main() {
     println!("{pipe_drawing}");
     println!("The furthest spot from the start is [{furthest}] taking [{elapsed_1:?}]");
     println!("The number of nodes surrounded by the pipe is [{inner_node_count}] taking [{elapsed_2:?}]");
-
-    // part 2 plan.
-    // - have walkers record their mapcoords
-    // - have PipeMap be able to take a Vec<MapCoord> (Pipe struct) and paint their map with it?
-    //   - build on this
-    // - do rasterize scanning.
-    //   - go left to right, if we see a pipe segment, count thet next chars until we se another pipe segment
-    //   - then turn it off
-    // - be able to mark pipe segments based off of a pipe map
 }
 
 #[cfg(test)]
