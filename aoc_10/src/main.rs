@@ -84,7 +84,7 @@ impl PathMap {
         let mut canvas: Vec<char> = vec!['.'; origin.map.len()];
 
         // mark all of the nodes that path lies on with an 'X'
-        for cell in &path.pipe_locs {
+        for cell in path {
             // calculate the position in 1D
             let spot: usize = (cell.row * origin.cols) + cell.col;
             let symbol: char = origin.get_cell(cell).unwrap();
@@ -95,9 +95,9 @@ impl PathMap {
                'S' => {
                     // Locate the first step and last step of the path as this path is a loop and these two will connect to the start position
                     // since this should be a loop, this path's first and last element is the starting position
-                    let loc_of_unknown: &MapCoord = &path.pipe_locs[0];
-                    let first_loc: &MapCoord = &path.pipe_locs[1];
-                    let last_loc: &MapCoord = &path.pipe_locs[path.len() - 2];
+                    let loc_of_unknown: &MapCoord = &path[0];
+                    let first_loc: &MapCoord = &path[1];
+                    let last_loc: &MapCoord = &path[path.len() - 2];
 
                     // figure out the start position based on the two connecting pipe pieces
                     Self::assess_pipe_connection(loc_of_unknown, 
@@ -231,6 +231,10 @@ impl fmt::Display for PipeMapError {
 impl std::error::Error for PipeMapError {}
 
 impl PipeMap {
+   /// Takes a string input and converts it into a PipeMap
+   /// 
+   /// Assumes the string has line returns denoting the rows of the map.
+   /// Also assumes that the input string will have the same number of characters between each line return.
     pub fn parse( input: &str ) -> PipeMap {
         let row_count: usize = input.chars().filter(|c| *c == '\n').count() + 1; // assumes no line-return at end of input
         let col_count: usize = input.find('\n').unwrap();
@@ -248,6 +252,11 @@ impl PipeMap {
         Some( MapCoord { row: (row), col: (col) } )
     }
 
+    /// Returns the next location given a previous location and a current location on this map.
+    /// 
+    /// Will return an error if the previous location and current location are not adjacent.
+    /// Will return an error if the next location is a dead end.
+    /// Will return Goal if we landed on a 'S' tile.
     pub fn transit_pipe( &self, 
                          from_pos: MapCoord, 
                          cur_pos: MapCoord ) -> Result<Direction, PipeMapError> {
@@ -379,23 +388,7 @@ enum Direction {
    Goal
 }
 
-#[derive(Clone)]
-/// A vector of coordinates denoting the path along a map.
-/// 
-/// The first element is the starting block, the last is where the walker finished.
-struct PipePath {
-   pipe_locs: Vec<MapCoord>
-}
-
-impl PipePath {
-    fn push( &mut self, location: &MapCoord ) {
-        self.pipe_locs.push(*location);
-    }
-
-    fn len( &self ) -> usize {
-        self.pipe_locs.len()
-    }
-}
+type PipePath = Vec<MapCoord>;
 
 #[derive(Clone)]
 struct MapWalker<'a> {
@@ -406,15 +399,19 @@ struct MapWalker<'a> {
 }
 
 impl<'a> MapWalker<'a> {
+    /// Creates a new MapWalker from a PipeMap, position, and starting direction.
     pub fn new( map: &'a PipeMap, start_pos: MapCoord, dir: Direction ) -> MapWalker {
         let mut mw = MapWalker { map: (map), 
                                                 last_pos: (start_pos), 
                                                 cur_pos: (start_pos), 
-                                                path: ( PipePath { pipe_locs: ( vec![start_pos] ) } ) };
+                                                path: ( vec![start_pos] ) };
         mw.shove(dir);
         mw
     }
 
+    /// Changes to location of this MapWalker and records its step.
+    /// 
+    /// If the given location is None, MapWalker does not move.
     fn relocate( &mut self, pos: Option<MapCoord> ) {
         if pos.is_some() {
         
@@ -422,10 +419,11 @@ impl<'a> MapWalker<'a> {
         self.cur_pos = pos.unwrap();
          
         // append the next step to our path
-        self.path.push(&self.cur_pos);
+        self.path.push( self.cur_pos );
         }
     }
 
+    /// Attempts to move this MapWalker one location in the direction of "dir"
     fn shove( &mut self, dir: Direction ) {
         match dir {
             Direction::Up => {
@@ -445,6 +443,9 @@ impl<'a> MapWalker<'a> {
         }
     }
 
+    /// Makes this MapWalker move a single step forward and returns the direction it moved.
+    /// 
+    /// Will return Stuck if this MapWalker did not change locations.
     pub fn step( &mut self ) -> Direction {
         let potential_direction = self.map.transit_pipe(self.last_pos, self.cur_pos);
         let next_direction: Direction = match potential_direction {
