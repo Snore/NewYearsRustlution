@@ -1,9 +1,9 @@
 use std::fs;
 use std::env;
 use std::fmt;
+use std::iter::Map;
 
 /// A x,y coordinate on a 2D map
-#[derive(Clone, Copy)]
 struct MapCoord {
     /// The X variable of this coordinate
     row: usize,
@@ -37,17 +37,62 @@ trait Mappable {
     }
 }
 
+// use itertools::Itertools;  // 0.10.1
+
+// fn main() {
+//     let numbers: Vec<i32> = vec![1, 2, 3, 4, 5];
+//     for combination in numbers.into_iter().combinations(2) {
+//         println!("{:?}", combination);
+//     }
+// }
+
+/**
+ * Yes, you've got it! 
+
+To clarify, you'll need to create a separate crate (which is essentially a package in Rust) for your procedural macro. This crate will contain the code for your custom derive macro. 
+
+Here's a simplified step-by-step process:
+
+1. Create a new library crate for your procedural macro. You can do this with the command `cargo new --lib my_trait_derive`.
+
+2. In the new crate, write your procedural macro. This will be a function that takes a `TokenStream`, parses it, and generates the necessary code to implement your trait for a struct.
+
+3. Add the new crate to your main crate's `Cargo.toml` file under `[dependencies]`.
+
+4. In your main crate, use `#[macro_use] extern crate my_trait_derive;` to bring the procedural macro into scope.
+
+5. Now you can use `#[derive(MyTrait)]` on your structs in your main crate!
+
+Remember, writing procedural macros is an advanced feature of Rust and can be quite complex. Take your time to understand how they work. The [Rust book](https://doc.rust-lang.org/book/ch19-06-macros.html) and the [Rust reference](https://doc.rust-lang.org/reference/procedural-macros.html) have more detailed information on this topic.
+
+I hope this helps! Let me know if you have any other questions. 😊
+ */
+
 struct StarField {
-   field : Vec<char>,
+   field : Vec<u32>,
    cols: usize,
    rows: usize
 }
 
+enum StarFieldError {
+    OutOfBounds
+}
+
+impl fmt::Display for StarFieldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StarFieldError::OutOfBounds => write!(f, "Point out of bounds."),
+        }
+    }
+}
+
+impl std::error::Error for StarFieldError {}
+
 impl fmt::Display for StarField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for row in self.field.chunks(self.cols) {
-            for char in row {
-                write!(f, "{}", char)?;
+            for element in row {
+                write!(f, "{}", element)?;
             }
             write!(f, "{}", "\n")?;
         }
@@ -55,81 +100,114 @@ impl fmt::Display for StarField {
     }
 }
 
-impl StarField {
-   const EMPTY_CHAR: char = '.';
+impl Mappable for StarField {
+   fn cols( &self ) -> &usize {
+       &self.cols
+   }
 
-   /// Takes a string representation of a star field and creates a StarField
+   fn rows( &self ) -> &usize {
+       &self.rows
+   }
+}
+
+impl StarField {
+    const GALAXY_VALUE: u32 = 0u32;
+    const SPACE_VALUE: u32 = 1u32;
+
+    /// Takes a string representation of a star field and creates a StarField
     pub fn parse( input: String ) -> StarField {
         let row_count: usize = input.chars()
                                     .filter(|c| *c == '\n')
                                     .count() + 1; // assumes no line-return at end of input
         let col_count: usize = input.find('\n')
                                     .unwrap();
-        let field : Vec<char> = input.chars()
+        let field : Vec<u32> = input.chars()
                                      .filter(|c| *c != '\n')
+                                     .map(|c| match c {
+                                        '#' => Self::GALAXY_VALUE,
+                                        '.' => Self::SPACE_VALUE,
+                                        _ => unreachable!(),
+                                     })
                                      .collect(); // we don't want the line returns
 
-        let compressed_field: StarField = StarField{ field: ( field ), 
-                                                     cols: ( col_count ), 
-                                                     rows: ( row_count ) };
-        Self::expand( compressed_field )
+        Self::apply_distortion( StarField{ field: ( field ), cols: ( col_count ), rows: ( row_count ) } )
     }
 
-    /// Accounts for gravitational distortion and adds an extra row/col for every
-    /// row and column that have no galaxies
-    fn expand( field: StarField ) -> StarField {
-        // first check the columns, then check the rows.
-        // it does not really matter which order we do it in.
-
-        // iterate through all of the columns
-        let mut empty_columns: Vec<usize> = Vec::new();
-        for col in 0..field.cols {
-            // produce a range that is just the glyphs in the column in field
-            // and check it for the absence of galaxies
-            let is_empty: bool = field.iter_for_column(col)
-                                      .all(|c| *c == Self::EMPTY_CHAR);
-            if is_empty {
-                empty_columns.push(col);
-            }
+    /// Returns the relative distance between two coordinates on the StarField
+    /// 
+    /// Will return an Error if one of the points is outside of the StarField
+    pub fn distance_between( &self, point_one: MapCoord, point_two: MapCoord ) -> Result<u64, StarFieldError> {
+        if !self.is_in(point_one) || !self.is_in(point_two) {
+            Err(StarFieldError::OutOfBounds)
         }
 
+        let distance: u64 = point_one.row.abs_diff(point_two.row) + point_one.col.abs_diff(point_two.col);
+        Ok(distance)
+    }
+
+    /// Returns an iterator that iterates over all galaxies in the StarField
+    pub fn galaxies<'a>( &'a self ) -> impl Iterator<Item = MapCoord> + 'a {
+        self.field.iter()
+                  .enumerate()
+                  .filter(|(_i, c)| **c == Self::GALAXY_VALUE )
+                  .filter_map(|(i, _c)| self.get_map_coord(i))
+    }
+
+    /// Checks to see if a MapCoord is within this StarField
+    fn is_in( &self, coord: MapCoord ) -> bool {
+        coord.row < self.rows && coord.col < self.cols
+    }
+
+    /// Accounts for the gravitational distortion and adds an extra row and column to 
+    /// rows and columns with no galaxies
+    fn apply_distortion( input: StarField ) -> StarField {
         // iterate through all of the rows and mark the empty ones
         let mut empty_rows: Vec<usize> = Vec::new();
-        for (row_idx, row) in field.field.chunks(field.cols).enumerate() {
-            let is_empty: bool = row.iter().all(|c| *c == Self::EMPTY_CHAR );
+        for (row_idx, row) in input.field.chunks(input.cols).enumerate() {
+            let is_empty: bool = row.iter().all(|c| *c == Self::SPACE_VALUE );
             if is_empty {
                 empty_rows.push(row_idx);
             }
         }
 
-        let expanded_cols: usize = field.cols + empty_columns.len();
-        let expanded_rows: usize = field.rows + empty_rows.len();
-        let mut expanded_field: StarField = StarField { field: (Vec::new()), 
-                                                        cols: (expanded_cols), 
-                                                        rows: (expanded_rows) };
-
-        // inject the extra elements while repopulating the field
-        for (row_idx, row) in field.field.chunks(field.cols).enumerate() {
-            for (char_idx, char) in row.iter().enumerate() {
-                // populate the expanded field
-                expanded_field.field.push(*char);
-                //
+        // iterate through all of the columns
+        let mut empty_columns: Vec<usize> = Vec::new();
+        for col in 0..input.cols {
+            // produce a range that is just the glyphs in the column in field
+            // and check it for the absence of galaxies
+            let is_empty: bool = input.iter_for_column(col)
+                                      .all(|c| *c == Self::SPACE_VALUE);
+            if is_empty {
+                empty_columns.push(col);
             }
         }
 
-        expanded_field
+        let distorted_field: StarField = StarField{ field: input.field, 
+                                                    cols: (input.cols), 
+                                                    rows: (input.rows) };
+        distorted_field
     }
 
-    fn iter_for_column( &self, col: usize ) -> impl Iterator<Item = &char> {
+    fn iter_for_column( &self, col: usize ) -> impl Iterator<Item = &u32> {
+        // self.field.iter()
+        //           .enumerate()
+        //           .filter_map(move |(i, c)| {
+        //               if i % col == 0 {
+        //                   Some(c)
+        //               } else {
+        //                   None
+        //               }
+        //           } )
         self.field.iter()
                   .enumerate()
-                  .filter_map(move |(i, c)| {
-                      if i % col == 0 {
-                          Some(c)
-                      } else {
-                          None
-                      }
-                  } )
+                  .filter_map(move |(location, c)| {
+                    if let Some(mapped_loc) = Mappable::get_map_coord(self, location) {
+                        if mapped_loc.col == col {
+                            return Some(c);
+                        }
+                    }
+                    return None;
+                  })
     }
 }
 
