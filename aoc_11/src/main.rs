@@ -3,6 +3,7 @@ use std::env;
 use std::fmt;
 use std::iter::Map;
 
+#[derive(Clone, Copy, Debug)]
 /// A x,y coordinate on a 2D map
 struct MapCoord {
     /// The X variable of this coordinate
@@ -74,6 +75,7 @@ struct StarField {
    rows: usize
 }
 
+#[derive(Debug)]
 enum StarFieldError {
     OutOfBounds
 }
@@ -138,11 +140,12 @@ impl StarField {
     /// Will return an Error if one of the points is outside of the StarField
     pub fn distance_between( &self, point_one: MapCoord, point_two: MapCoord ) -> Result<u64, StarFieldError> {
         if !self.is_in(point_one) || !self.is_in(point_two) {
-            Err(StarFieldError::OutOfBounds)
+            return Err(StarFieldError::OutOfBounds)
         }
 
-        let distance: u64 = point_one.row.abs_diff(point_two.row) + point_one.col.abs_diff(point_two.col);
-        Ok(distance)
+        let distance_row = usize::abs_diff(point_one.row, point_two.row);
+        let distance_col = usize::abs_diff(point_one.col, point_two.col);
+        Ok((distance_row + distance_col) as u64)
     }
 
     /// Returns an iterator that iterates over all galaxies in the StarField
@@ -181,6 +184,13 @@ impl StarField {
                 empty_columns.push(col);
             }
         }
+        // TODO iter_for_column is broken!
+
+        println!("Empty rows [{:?}]\nEmpty Columns [{:?}]", empty_rows, empty_columns);
+        // let test : Vec<&u32> = input.iter_for_column(2).collect();
+        // let test2: Vec<(usize, &u32)> = input.field.iter().enumerate().filter_map(|location, c|);
+        // println!("test ouput {:?}", test);
+        // println!("test2 ouput {:?}", test2);
 
         let distorted_field: StarField = StarField{ field: input.field, 
                                                     cols: (input.cols), 
@@ -202,6 +212,7 @@ impl StarField {
                   .enumerate()
                   .filter_map(move |(location, c)| {
                     if let Some(mapped_loc) = Mappable::get_map_coord(self, location) {
+                        println!("Debug printout {:?}", mapped_loc);
                         if mapped_loc.col == col {
                             return Some(c);
                         }
