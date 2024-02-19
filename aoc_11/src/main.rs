@@ -3,7 +3,7 @@ use std::env;
 use std::fmt;
 use std::iter::Map;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A x,y coordinate on a 2D map
 struct MapCoord {
     /// The X variable of this coordinate
@@ -20,7 +20,7 @@ trait Mappable {
         let row: usize = location / self.cols();
         let col: usize = location % self.cols();
 
-        if self.rows() >= &row {
+        if self.rows() <= &row {
             None
         } else {
             Some( MapCoord { row: (row), col: (col) } )
@@ -29,7 +29,7 @@ trait Mappable {
 
     fn get_location( &self, location: MapCoord ) -> Option<usize> {
         let too_big: usize = self.rows() * self.cols();
-        let position: usize = location.row * location.col;
+        let position: usize = (location.row * self.cols()) + location.col;
         if position >= too_big {
             None
         } else {
@@ -37,6 +37,8 @@ trait Mappable {
         }
     }
 }
+
+
 
 // use itertools::Itertools;  // 0.10.1
 
@@ -68,6 +70,18 @@ Remember, writing procedural macros is an advanced feature of Rust and can be qu
 
 I hope this helps! Let me know if you have any other questions. 😊
  */
+
+struct Dilation{
+    left_right: usize,
+    top_bottom: usize
+}
+
+impl Dilation {
+    pub fn new( left_right: usize, top_bottom: usize ) -> Dilation {
+        Dilation{ left_right: ( left_right ), 
+                  top_bottom: ( top_bottom )}
+    }
+}
 
 struct StarField {
    field : Vec<u32>,
@@ -184,35 +198,32 @@ impl StarField {
                 empty_columns.push(col);
             }
         }
-        // TODO iter_for_column is broken!
 
-        println!("Empty rows [{:?}]\nEmpty Columns [{:?}]", empty_rows, empty_columns);
-        // let test : Vec<&u32> = input.iter_for_column(2).collect();
-        // let test2: Vec<(usize, &u32)> = input.field.iter().enumerate().filter_map(|location, c|);
-        // println!("test ouput {:?}", test);
-        // println!("test2 ouput {:?}", test2);
+        // set all of the cells in empty rows or columns to 2
+        let mut extended_field = input.field.clone();
+        for ( row_idx, row) in extended_field.chunks_mut(input.cols).enumerate() {
+            for idx in 0..input.cols {
+                if empty_rows.contains(&row_idx) {
+                    row[idx] = 2;
+                }
+                else if empty_columns.contains(&idx) {
+                    row[idx] = 2;
+                }
+            }
+            
+        }
 
-        let distorted_field: StarField = StarField{ field: input.field, 
-                                                    cols: (input.cols), 
-                                                    rows: (input.rows) };
-        distorted_field
+        StarField{ field: extended_field, 
+                   cols: (input.cols), 
+                   rows: (input.rows) }
+
     }
 
     fn iter_for_column( &self, col: usize ) -> impl Iterator<Item = &u32> {
-        // self.field.iter()
-        //           .enumerate()
-        //           .filter_map(move |(i, c)| {
-        //               if i % col == 0 {
-        //                   Some(c)
-        //               } else {
-        //                   None
-        //               }
-        //           } )
         self.field.iter()
                   .enumerate()
                   .filter_map(move |(location, c)| {
                     if let Some(mapped_loc) = Mappable::get_map_coord(self, location) {
-                        println!("Debug printout {:?}", mapped_loc);
                         if mapped_loc.col == col {
                             return Some(c);
                         }
@@ -234,4 +245,42 @@ fn main() {
 
     let stars: StarField = StarField::parse( space_raw );
     println!("{stars}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestMap {
+        rows: usize,
+        cols: usize,
+    }
+
+    impl Mappable for TestMap {
+        fn rows(&self) -> &usize {
+            &self.rows
+        }
+
+        fn cols(&self) -> &usize {
+            &self.cols
+        }
+    }
+
+    #[test]
+    fn test_get_map_coord() {
+        let map = TestMap { rows: 10, cols: 10 };
+        assert_eq!(map.get_map_coord(0), Some(MapCoord { row: 0, col: 0 }));
+        assert_eq!(map.get_map_coord(5), Some(MapCoord { row: 0, col: 5 }));
+        assert_eq!(map.get_map_coord(15), Some(MapCoord { row: 1, col: 5 }));
+        assert_eq!(map.get_map_coord(99), Some(MapCoord { row: 9, col: 9 }));
+        assert_eq!(map.get_map_coord(105), None);
+    }
+
+    #[test]
+    fn test_get_location() {
+        let map = TestMap { rows: 10, cols: 10 };
+        assert_eq!(map.get_location(MapCoord { row: 0, col: 5 }), Some(5));
+        assert_eq!(map.get_location(MapCoord { row: 1, col: 5 }), Some(15));
+        assert_eq!(map.get_location(MapCoord { row: 10, col: 10 }), None);
+    }
 }
