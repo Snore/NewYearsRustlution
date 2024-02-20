@@ -1,7 +1,6 @@
 use std::fs;
 use std::env;
 use std::fmt;
-use std::iter::Map;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A x,y coordinate on a 2D map
@@ -37,39 +36,6 @@ trait Mappable {
         }
     }
 }
-
-
-
-// use itertools::Itertools;  // 0.10.1
-
-// fn main() {
-//     let numbers: Vec<i32> = vec![1, 2, 3, 4, 5];
-//     for combination in numbers.into_iter().combinations(2) {
-//         println!("{:?}", combination);
-//     }
-// }
-
-/**
- * Yes, you've got it! 
-
-To clarify, you'll need to create a separate crate (which is essentially a package in Rust) for your procedural macro. This crate will contain the code for your custom derive macro. 
-
-Here's a simplified step-by-step process:
-
-1. Create a new library crate for your procedural macro. You can do this with the command `cargo new --lib my_trait_derive`.
-
-2. In the new crate, write your procedural macro. This will be a function that takes a `TokenStream`, parses it, and generates the necessary code to implement your trait for a struct.
-
-3. Add the new crate to your main crate's `Cargo.toml` file under `[dependencies]`.
-
-4. In your main crate, use `#[macro_use] extern crate my_trait_derive;` to bring the procedural macro into scope.
-
-5. Now you can use `#[derive(MyTrait)]` on your structs in your main crate!
-
-Remember, writing procedural macros is an advanced feature of Rust and can be quite complex. Take your time to understand how they work. The [Rust book](https://doc.rust-lang.org/book/ch19-06-macros.html) and the [Rust reference](https://doc.rust-lang.org/reference/procedural-macros.html) have more detailed information on this topic.
-
-I hope this helps! Let me know if you have any other questions. 😊
- */
 
 struct Dilation{
     left_right: usize,
@@ -228,7 +194,7 @@ impl StarField {
                             return Some(c);
                         }
                     }
-                    return None;
+                    None
                   })
     }
 }
@@ -245,6 +211,19 @@ fn main() {
 
     let stars: StarField = StarField::parse( space_raw );
     println!("{stars}");
+
+    // TODO split distance field and char field
+    // WANT function that returns pairs of items
+
+    let galaxies: Vec<MapCoord> = stars.galaxies().collect();
+    let mut total_distance: u64 = 0u64;
+    for outer_galaxy_idx in 0..galaxies.len() {
+        for inner_galaxy_idx in (outer_galaxy_idx + 1)..galaxies.len() {
+            total_distance += stars.distance_between(galaxies[outer_galaxy_idx], galaxies[inner_galaxy_idx]).unwrap();
+        }
+    }
+
+    println!("The total distance between all galaxies part 1 is [{total_distance}]"); // 374 : stars_1
 }
 
 #[cfg(test)]
