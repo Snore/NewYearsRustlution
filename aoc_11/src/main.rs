@@ -37,22 +37,32 @@ trait Mappable {
     }
 }
 
-struct Dilation{
+#[derive(Clone)]
+struct StarCell{
+    observed: char,
     left_right: usize,
     top_bottom: usize
 }
 
-impl Dilation {
-    pub fn new( left_right: usize, top_bottom: usize ) -> Dilation {
-        Dilation{ left_right: ( left_right ), 
+impl StarCell {
+    const GALAXY_VALUE: char = '#';
+
+    pub fn new( observed: char, left_right: usize, top_bottom: usize ) -> StarCell {
+        StarCell{ observed: ( observed ), 
+                  left_right: ( left_right ), 
                   top_bottom: ( top_bottom )}
+    }
+
+    /// Returns true if this StarCell holds a galaxy, false otherwise
+    pub fn is_galaxy( &self ) -> bool {
+        self.observed == Self::GALAXY_VALUE
     }
 }
 
 struct StarField {
-   field : Vec<u32>,
-   cols: usize,
-   rows: usize
+    field : Vec<StarCell>,
+    cols: usize,
+    rows: usize
 }
 
 #[derive(Debug)]
@@ -82,6 +92,12 @@ impl fmt::Display for StarField {
     }
 }
 
+impl fmt::Display for StarCell {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}/{}]", self.left_right, self.top_bottom )
+    }
+}
+
 impl Mappable for StarField {
    fn cols( &self ) -> &usize {
        &self.cols
@@ -93,26 +109,25 @@ impl Mappable for StarField {
 }
 
 impl StarField {
-    const GALAXY_VALUE: u32 = 0u32;
-    const SPACE_VALUE: u32 = 1u32;
+    const SPACE_VALUE: usize = 1usize;
 
     /// Takes a string representation of a star field and creates a StarField
     pub fn parse( input: String ) -> StarField {
         let row_count: usize = input.chars()
                                     .filter(|c| *c == '\n')
                                     .count() + 1; // assumes no line-return at end of input
-        let col_count: usize = input.find('\n')
+        let col_count: usize = input.find('\n') // assumes the line return is in the same position on every line
                                     .unwrap();
-        let field : Vec<u32> = input.chars()
-                                     .filter(|c| *c != '\n')
-                                     .map(|c| match c {
-                                        '#' => Self::GALAXY_VALUE,
-                                        '.' => Self::SPACE_VALUE,
-                                        _ => unreachable!(),
-                                     })
-                                     .collect(); // we don't want the line returns
+        let field : Vec<StarCell> = input.chars()
+                                         .filter(|c| *c != '\n')
+                                         .map(|c| StarCell::new(c, 
+                                                                    Self::SPACE_VALUE, 
+                                                                    Self::SPACE_VALUE) )
+                                         .collect(); // we don't want the line returns
 
-        Self::apply_distortion( StarField{ field: ( field ), cols: ( col_count ), rows: ( row_count ) } )
+        Self::apply_distortion( StarField{ field: ( field ), 
+                                                  cols: ( col_count ), 
+                                                  rows: ( row_count ) } )
     }
 
     /// Returns the relative distance between two coordinates on the StarField
@@ -123,16 +138,28 @@ impl StarField {
             return Err(StarFieldError::OutOfBounds)
         }
 
-        let distance_row = usize::abs_diff(point_one.row, point_two.row);
-        let distance_col = usize::abs_diff(point_one.col, point_two.col);
-        Ok((distance_row + distance_col) as u64)
+        let start_row = usize::min( point_one.row, point_two.row);
+        let end_row = usize::max( point_one.row, point_two.row);
+        let start_col = usize::min( point_one.col, point_two.col);
+        let end_col = usize::max( point_one.col, point_two.col);
+
+        let mut total_distance: usize = 0;
+        for x in start_row..end_row {
+            total_distance += self.field[self.get_location( MapCoord{ row: x, col: start_col}).unwrap()].left_right;
+        }
+
+        for y in start_col..end_col {
+            total_distance += self.field[self.get_location(MapCoord{ row: start_row, col: y}).unwrap()].top_bottom;
+        }
+
+        Ok(total_distance as u64)
     }
 
     /// Returns an iterator that iterates over all galaxies in the StarField
     pub fn galaxies<'a>( &'a self ) -> impl Iterator<Item = MapCoord> + 'a {
         self.field.iter()
                   .enumerate()
-                  .filter(|(_i, c)| **c == Self::GALAXY_VALUE )
+                  .filter(|(_i, c)| c.is_galaxy() )
                   .filter_map(|(i, _c)| self.get_map_coord(i))
     }
 
@@ -147,7 +174,7 @@ impl StarField {
         // iterate through all of the rows and mark the empty ones
         let mut empty_rows: Vec<usize> = Vec::new();
         for (row_idx, row) in input.field.chunks(input.cols).enumerate() {
-            let is_empty: bool = row.iter().all(|c| *c == Self::SPACE_VALUE );
+            let is_empty: bool = row.iter().all(|c| !c.is_galaxy() );
             if is_empty {
                 empty_rows.push(row_idx);
             }
@@ -159,7 +186,8 @@ impl StarField {
             // produce a range that is just the glyphs in the column in field
             // and check it for the absence of galaxies
             let is_empty: bool = input.iter_for_column(col)
-                                      .all(|c| *c == Self::SPACE_VALUE);
+                                      .all(|c| !c.is_galaxy());
+
             if is_empty {
                 empty_columns.push(col);
             }
@@ -170,10 +198,10 @@ impl StarField {
         for ( row_idx, row) in extended_field.chunks_mut(input.cols).enumerate() {
             for idx in 0..input.cols {
                 if empty_rows.contains(&row_idx) {
-                    row[idx] = 2;
+                    row[idx].left_right = 1000000;
                 }
                 else if empty_columns.contains(&idx) {
-                    row[idx] = 2;
+                    row[idx].top_bottom = 1000000;
                 }
             }
             
@@ -185,7 +213,7 @@ impl StarField {
 
     }
 
-    fn iter_for_column( &self, col: usize ) -> impl Iterator<Item = &u32> {
+    fn iter_for_column( &self, col: usize ) -> impl Iterator<Item = &StarCell> {
         self.field.iter()
                   .enumerate()
                   .filter_map(move |(location, c)| {
@@ -211,9 +239,6 @@ fn main() {
 
     let stars: StarField = StarField::parse( space_raw );
     println!("{stars}");
-
-    // TODO split distance field and char field
-    // WANT function that returns pairs of items
 
     let galaxies: Vec<MapCoord> = stars.galaxies().collect();
     let mut total_distance: u64 = 0u64;
