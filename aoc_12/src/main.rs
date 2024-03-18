@@ -1,7 +1,7 @@
 use std::fs;
 use std::env;
-use itertools::Combinations;
 use itertools::Itertools;
+use std::time::Instant;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 enum Condition {
@@ -10,7 +10,7 @@ enum Condition {
     Unkown
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Record {
     record: Vec<Condition>,
     damage_record: Vec<u32>,
@@ -47,7 +47,7 @@ impl Record {
     }
 
     /// Returns a list of all valid permutations of this record that do not invalidate this record's damage_record
-    pub fn get_valid_permutations( &self ) -> u32 {
+    pub fn get_valid_permutations( &self ) -> usize {
 
         // calculate number of springs need to be damaged in the unkowns
         let damage_count = self.record.iter()
@@ -57,13 +57,36 @@ impl Record {
 
         let all_perms = Record::get_all_permutations(self.record.len(), required_damage_nodes);
 
-        // TODO
-        // make vecs of all permutations of size X and # count required_damage_nodes
-        // map them into the ? slots
-        // keep the ones that have the same damage record as the original.
+        all_perms.iter().filter_map(| permutation | {
+            let temp_record = Self::apply_permutation(self.clone(), permutation);
+            if temp_record.damage_record == self.damage_record {
+                Some( temp_record )
+            } else {
+                None
+            }
+        }).count()
+    }
 
-        // try dynamic programming
-        todo!();
+    /// Applys a permutation to the passed in record and replaces all '?' values with the permutation
+    fn apply_permutation( original_record: Record, permutation: &Vec<Condition>) -> Record {
+        let mut new_record = original_record;
+
+        let num_replacements = permutation.len();
+        let mut current_replacement: usize = 0;
+        for existing_coniditon in new_record.record.iter_mut() {
+            if existing_coniditon == &Condition::Unkown {
+                *existing_coniditon = permutation[current_replacement];
+                current_replacement += 1;
+
+                if num_replacements <= current_replacement {
+                    break;
+                }
+            }
+        }
+
+        new_record.damage_record = Self::generate_damage_record(&new_record.record);
+        new_record.unknown_count = 0;
+        new_record
     }
 
     /// Returns a list of permutations for a record given the number of needed damaged springs.
@@ -84,11 +107,11 @@ impl Record {
     }
 
     /// Generates a damage_record from a condition record by counting the sets of contiguous damaged components
-    fn generate_damage_record( record: &Vec<Condition> ) -> Vec<usize> {
+    fn generate_damage_record( record: &Vec<Condition> ) -> Vec<u32> {
         assert!( !record.contains(&Condition::Unkown) ); // TODO make Result later
 
-        let mut damage_record: Vec<usize> = Vec::new();
-        let mut damage_counter: usize = 0;
+        let mut damage_record: Vec<u32> = Vec::new();
+        let mut damage_counter: u32 = 0;
         for spring in record {
             if spring == &Condition::Damaged {
                 damage_counter += 1;
@@ -130,12 +153,12 @@ fn main() {
                                      .collect();
 
     // println!("{:?}", records);
-    println!("{:?}", Record::get_all_permutations(4, 2));
-
-    // let ans1 = records.iter()
-    //                        .map( |r| r.get_valid_permutations() )
-    //                        .fold(0, |acc, total| acc + total );
-    // println!("The total number of valid spring records is {ans1}");
+    let timing_start: Instant = Instant::now();
+    let ans1 = records.iter()
+                           .map( |r| r.get_valid_permutations() )
+                           .fold(0, |acc, total| acc + total );
+    let elapsed: std::time::Duration = timing_start.elapsed();
+    println!("The total number of valid spring records is {ans1} and it took {:?}", elapsed);
 }
 
 #[cfg(test)]
