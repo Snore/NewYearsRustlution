@@ -1,7 +1,10 @@
+use std::fmt::write;
 use std::fs;
 use std::env;
+use std::fmt;
 use itertools::Itertools;
 use std::time::Instant;
+use std::io::{self, Write};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 enum Condition {
@@ -10,11 +13,41 @@ enum Condition {
     Unkown
 }
 
+impl fmt::Display for Condition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Condition::Good => write!(f, "."),
+            Condition::Damaged => write!(f, "#"),
+            Condition::Unkown => write!(f, "?")
+        }
+    }
+}
+
+type DamageRecord = Vec<u32>;
+
 #[derive(Debug, Clone)]
 struct Record {
     record: Vec<Condition>,
-    damage_record: Vec<u32>,
+    damage_record: DamageRecord,
     unknown_count: u32
+}
+
+impl fmt::Display for Record {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[ record: " )?;
+        for rec in &self.record {
+            write!(f, "{}", rec )?;
+        }
+        write!(f, " ]" )?;
+        write!(f, " damage: " )?;
+        for dam in &self.damage_record {
+            write!(f, "{},", dam )?;
+        }
+
+        write!(f, " | {}", self.unknown_count)?;
+
+        Ok(())
+    }
 }
 
 impl Record {
@@ -46,6 +79,32 @@ impl Record {
                 unknown_count: ( mystery_count ) }
     }
 
+    /// Returns a copy of the Record that has been folded num_fold times
+    /// 
+    /// For every fold, the original record is duplicated and appended.  The record field itself is concatenated with a '?' section between folds
+    pub fn fold( &self, num_fold: usize ) -> Record {
+        // repeat the original damage_record num_fold times
+        let folded_damage_record: Vec<_> = self.damage_record.iter()
+                                                             .cloned()
+                                                             .cycle()
+                                                             .take(self.damage_record.len() * num_fold)
+                                                             .collect();
+
+        // repeat the original record num_fold times but concatenate each reapeat of the sequence with a '?'
+        let link = &[Condition::Unkown];             // slice I wanna insert between sequences
+        let record_fold_len = ( self.record.len() * num_fold ) // number of times to copy over for original list
+                                     + (num_fold - 1);                // number of links to connect the sequences
+        let repeated_original_record: Vec<_> = self.record.iter()
+                                                          .chain( link )
+                                                          .cloned()
+                                                          .cycle()
+                                                          .take( record_fold_len )
+                                                          .collect();
+        Record{ record: repeated_original_record, 
+                damage_record: folded_damage_record, 
+                unknown_count: self.unknown_count * num_fold as u32 + (num_fold - 1) as u32 }
+    }
+
     /// Returns a list of all valid permutations of this record that do not invalidate this record's damage_record
     pub fn get_valid_permutations( &self ) -> usize {
 
@@ -55,7 +114,11 @@ impl Record {
                                            .count();
         let required_damage_nodes = self.count_damaged_springs() as usize - damage_count;
 
-        let all_perms = Record::get_all_permutations(self.record.len(), required_damage_nodes);
+        let all_perms = Record::get_all_permutations(self.unknown_count as usize, required_damage_nodes);
+
+        for perm in &all_perms {
+            println!("{}", Record{ record: perm.clone(), damage_record: Vec::new(), unknown_count: 0});
+        }
 
         all_perms.iter().filter_map(| permutation | {
             let temp_record = Self::apply_permutation(self.clone(), permutation);
@@ -95,6 +158,10 @@ impl Record {
     fn get_all_permutations( length: usize, required_damage: usize ) -> Vec<Vec<Condition>> {
         let good_record: Vec<Condition> = vec![Condition::Good; length];
 
+        let debug = factorial(length as u128) / (factorial(required_damage as u128)*factorial((length-required_damage) as u128));
+        println!("Num combinations: {debug} len[{length}] req_damage[{required_damage}]" );
+        io::stdout().flush().unwrap();
+
         // generate all possible permutations of Springs given how many we need to have damaged
         (0..length).combinations(required_damage)
                    .map( |perm_mapping: Vec<usize>| {
@@ -131,11 +198,95 @@ impl Record {
         damage_record
     }
 
+    /// Sum of the values in the damage record
     fn count_damaged_springs( &self ) -> u32 {
         self.damage_record.iter()
                           .fold(0, |acc, e| acc + e )
     }
 
+    /// Sum of the minimum number of springs needed to represent the damage record
+    /// 
+    /// This is a combination of damaged springs and good springs separating the damaged springs
+    /// as we need at least one Good spring to separate two damaged springs.
+    fn count_minumum_springs( &self ) -> usize {
+        self.count_damaged_springs() as usize + (self.damage_record.len() - 1)
+    }
+
+    /// Takes a mystery record and returns the number of permutations that can result in the damage record.
+    /// 
+    /// A Mystery record is a record made of only '?'
+    fn calc_perms_of_groups( mystery_record: &Record ) -> usize {
+        debug_assert!( mystery_record.record.iter().all( |s| *s == Condition::Unkown ), 
+                       "Record is not mysterious enough." );
+
+        let min_needed_symbols = mystery_record.count_minumum_springs();
+        if min_needed_symbols == mystery_record.record.len() {
+            return 1;
+        }
+
+        // collapse damage record such that groups of ### become one #
+        let reduced_record = mystery_record.reduce_mystery_record();
+        // add calc_total_permutations; start here.
+        let num_of_groups = reduced_record.damage_record.len();
+        let num_of_one_cluster_perms = reduced_record.unknown_count as usize - ( reduced_record.damage_record.len() - 1 );
+        let mut num_perms = reduced_record.calc_total_permutations() as usize - num_of_one_cluster_perms;
+
+        if num_of_groups <= 2 {
+            // exit condition
+            return num_perms;
+        }
+
+        // Find all permutations of damage record?
+        // TODO this is suspect
+        let all_damage_records = Self::generate_groups(reduced_record.damage_record.len() );
+        let num_touching_groups = all_damage_records.iter()
+                                                           .map( | possible_damage_record | {
+                                                              Record{ record: reduced_record.record.clone(), 
+                                                                      damage_record: possible_damage_record.to_vec(), 
+                                                                      unknown_count: reduced_record.unknown_count } })
+                                                           .fold(0, |acc, r| {
+                                                              acc + Self::calc_perms_of_groups(&r)
+                                                           });
+
+        num_perms -= num_touching_groups;
+
+        num_perms
+    }
+
+    /// Takes a mystery record and reduces all groups of damage records to size 1; then alters the record accordingly
+    fn reduce_mystery_record( &self ) -> Record {
+        debug_assert!( self.record.iter().all( |s| *s == Condition::Unkown ), 
+                       "Record is not mysterious enough." );
+
+        // count the number of springs taken away to reduce each group to size of 1
+        let reduction_count = self.damage_record.iter().fold(0, |acc, d| acc + (d-1));
+        let reduced_record_size = self.record.len() - reduction_count as usize;
+        let reduced_damage_record = vec![1; self.damage_record.len()];
+        let reduced_record = vec![Condition::Unkown; reduced_record_size];
+
+        Record{ record: reduced_record, 
+                damage_record: reduced_damage_record, 
+                unknown_count: reduced_record_size as u32 }
+    }
+
+    /// Calculates the total number of permutations of a Record
+    /// 
+    /// This includes invalid permutations where the record does not match the damage record due to groups touching
+    fn calc_total_permutations( &self ) -> u128 {
+        factorial(self.record.len() as u128) / 
+        (factorial(self.unknown_count as u128) * factorial((self.record.len() - self.unknown_count as usize) as u128))
+    }
+
+    /// Generates all possible damage records for a pool_size where all valid groups can be summed to
+    /// pool_size and have at least 2 groups in them
+    fn generate_groups( pool_size: usize ) -> Vec<DamageRecord> {
+        todo!();
+    }
+
+}
+
+pub fn factorial(num: u128) -> u128 {
+    (1..=num).product()
 }
 
 fn main() {
@@ -152,13 +303,32 @@ fn main() {
                                      .map( |record_row| Record::parse(record_row) )
                                      .collect();
 
-    // println!("{:?}", records);
+    // for part 2
+    let _big_records: Vec<_> = records.iter()
+                                     .map(|r| r.fold(5) )
+                                     .collect();
+
+    for record in &records {
+        println!("{}", record);
+    }
+
+    // TODO the '.' tells us how many contigous blocks are already done
+
     let timing_start: Instant = Instant::now();
     let ans1 = records.iter()
-                           .map( |r| r.get_valid_permutations() )
-                           .fold(0, |acc, total| acc + total );
-    let elapsed: std::time::Duration = timing_start.elapsed();
-    println!("The total number of valid spring records is {ans1} and it took {:?}", elapsed);
+                             .map( |r| r.get_valid_permutations() )
+                             .fold(0, |acc, total| acc + total );
+    println!("The total number of valid spring records is {ans1} and it took {:?}", timing_start.elapsed());
+
+    // for record in &big_records {
+    //     println!("{}", record);
+    // }
+
+    // let timing_start_2 = Instant::now();
+    // let ans2 = big_records.iter()
+    //                              .map( |r| r.get_valid_permutations() )
+    //                              .fold(0, |acc, total| acc + total );
+    // println!("The total number of valid spring records for part 2 is {ans2} and it took {:?}", timing_start_2.elapsed());
 }
 
 #[cfg(test)]
@@ -179,5 +349,24 @@ mod tests {
         assert_eq!(Record::get_all_permutations(4, 2).len(), 6);
         assert_eq!(Record::get_all_permutations(4, 3).len(), 4);
         assert_eq!(Record::get_all_permutations(4, 4).len(), 1);
+    }
+
+    #[test]
+    fn test_help() {
+        // Given: ??????? 2,1
+        // Num val perm = ?????? 1,1 where num_val_perm=((slots choose num(#)) - (slots - (groups - 1)) ) 
+        // do this recursively for all groups until we only get to 1,1
+        // let record = Record::parse("??????? 1,1,1,1");
+        // assert_eq!(record.get_valid_permutations(), 5);
+        // let record = Record::parse("?#?#?#?#?#?#?#? 1,3,1,6");
+        // assert_eq!(record.get_valid_permutations(), 1);
+        // let record_2 = Record::parse("??????????????? 1,3,1,6");
+        // assert_eq!(record_2.get_valid_permutations(), 5);
+        // let record_3 = Record::parse("??????????????? 1,3");
+        // assert_eq!(record_3.get_valid_permutations(), 66);
+        // let record_4 = Record::parse("??????????????? 1,1,1,1,1");
+        // assert_eq!(record_4.get_valid_permutations(), 462);
+        let record_5 = Record::parse("?????????????? 1,1,1,1");
+        assert_eq!(record_5.get_valid_permutations(), 330);
     }
 }

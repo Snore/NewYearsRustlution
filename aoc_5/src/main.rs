@@ -234,6 +234,8 @@ fn main() {
    let timing_start: Instant = Instant::now();
    let seeds_from_ranges: Vec<u32> = parse_seeds_as_ranges(seeds_and_almanac_raw.0);
 
+   // from 0 to inifinity, map each seed to it's location by travelling backwards and stop
+   // when we find the first location in our ranges
    let mut ans_2: u32 = 0;
    for location_spot in 0u32..seeds_from_ranges.len() as u32 {
       let possible_seed: u32 = almanac.location_to_seed(&location_spot);
