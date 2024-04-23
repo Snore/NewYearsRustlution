@@ -1,12 +1,12 @@
-use std::fmt::write;
 use std::fs;
 use std::env;
 use std::fmt;
 use itertools::Itertools;
 use std::time::Instant;
 use std::io::{self, Write};
+use std::collections::BTreeMap;
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Ord, PartialOrd)]
 enum Condition {
     Good,
     Damaged,
@@ -25,7 +25,7 @@ impl fmt::Display for Condition {
 
 type DamageRecord = Vec<u32>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Record {
     record: Vec<Condition>,
     damage_record: DamageRecord,
@@ -108,17 +108,13 @@ impl Record {
     /// Returns a list of all valid permutations of this record that do not invalidate this record's damage_record
     pub fn get_valid_permutations( &self ) -> usize {
 
-        // calculate number of springs need to be damaged in the unkowns
+        // calculate number of springs needed to be damaged in the unkowns
         let damage_count = self.record.iter()
                                            .filter(|c| **c == Condition::Damaged)
                                            .count();
         let required_damage_nodes = self.count_damaged_springs() as usize - damage_count;
 
         let all_perms = Record::get_all_permutations(self.unknown_count as usize, required_damage_nodes);
-
-        for perm in &all_perms {
-            println!("{}", Record{ record: perm.clone(), damage_record: Vec::new(), unknown_count: 0});
-        }
 
         all_perms.iter().filter_map(| permutation | {
             let temp_record = Self::apply_permutation(self.clone(), permutation);
@@ -159,7 +155,6 @@ impl Record {
         let good_record: Vec<Condition> = vec![Condition::Good; length];
 
         let debug = factorial(length as u128) / (factorial(required_damage as u128)*factorial((length-required_damage) as u128));
-        println!("Num combinations: {debug} len[{length}] req_damage[{required_damage}]" );
         io::stdout().flush().unwrap();
 
         // generate all possible permutations of Springs given how many we need to have damaged
@@ -215,45 +210,80 @@ impl Record {
     /// Takes a mystery record and returns the number of permutations that can result in the damage record.
     /// 
     /// A Mystery record is a record made of only '?'
-    fn calc_perms_of_groups( mystery_record: &Record ) -> usize {
+    fn calc_perms_of_groups( mystery_record: &Record, memo: &mut BTreeMap<Record, u128> ) -> u128 {
         debug_assert!( mystery_record.record.iter().all( |s| *s == Condition::Unkown ), 
                        "Record is not mysterious enough." );
+        
+        println!("Mystery record: {mystery_record}");
 
+        // this catches when there is only one way to have have the damage record match the mystery record
+        // ex: ????? 1,1,1 -> there is only way to replace 3(?) with 3(#)
         let min_needed_symbols = mystery_record.count_minumum_springs();
         if min_needed_symbols == mystery_record.record.len() {
-            return 1;
+            return 1
         }
 
-        // collapse damage record such that groups of ### become one #
+        // reduces the damage record to only contain 1's
+        // ex. ???? 2,1 -> ??? 1,1
         let reduced_record = mystery_record.reduce_mystery_record();
-        // add calc_total_permutations; start here.
-        let num_of_groups = reduced_record.damage_record.len();
-        let num_of_one_cluster_perms = reduced_record.unknown_count as usize - ( reduced_record.damage_record.len() - 1 );
-        let mut num_perms = reduced_record.calc_total_permutations() as usize - num_of_one_cluster_perms;
-
-        if num_of_groups <= 2 {
-            // exit condition
-            return num_perms;
+        println!("Reduced record: {reduced_record}");
+        let slots = reduced_record.record.len() as u128;
+        let groups = reduced_record.damage_record.len() as u128;
+        if groups == 2 {
+            // terminating condition
+            // Num val perm = ?????? 1,1 where num_val_perm=((slots choose num(#)) - (slots - (groups - 1)) ) <-  magic sauce
+            // reduces to...
+            return n_choose_k(slots, groups) - ( slots - 1)
         }
 
-        // Find all permutations of damage record?
-        // TODO this is suspect
-        let all_damage_records = Self::generate_groups(reduced_record.damage_record.len() );
-        let num_touching_groups = all_damage_records.iter()
-                                                           .map( | possible_damage_record | {
-                                                              Record{ record: reduced_record.record.clone(), 
-                                                                      damage_record: possible_damage_record.to_vec(), 
-                                                                      unknown_count: reduced_record.unknown_count } })
-                                                           .fold(0, |acc, r| {
-                                                              acc + Self::calc_perms_of_groups(&r)
-                                                           });
+        // check to see if we already know the answer
+        if let Some(known_perms) = memo.get(&reduced_record) {
+            return *known_perms;
+        }
 
-        num_perms -= num_touching_groups;
+        // remove all permutations with contiguous #s of size (groups)
+        // slots - (groups - 1)
+        let mut total_perms = n_choose_k(slots, groups);
+        println!("Total Perms: {total_perms}");
 
-        num_perms
+        let num_all_touching_perms = slots - (groups - 1); // this is the all 1,1,1,...,1 calculation\
+        println!("num_all_touching_perms: {num_all_touching_perms}");
+
+
+        total_perms -= num_all_touching_perms;
+        println!("Total Perms: {total_perms}");
+
+        let mut known_damage_records: BTreeMap<usize, Vec<DamageRecord>> = BTreeMap::new();
+        let sub_groups = Record::generate_groups(groups as usize, &mut known_damage_records);
+        for sub_group in &sub_groups[1..(sub_groups.len()-1)] {
+            let new_record = Record{ record: reduced_record.record.clone(), 
+                damage_record: sub_group.clone(), 
+                unknown_count: reduced_record.record.len() as u32 };
+                println!("new_record: {new_record}");
+                
+                let perms_to_remove = Record::calc_perms_of_groups(&new_record, memo);
+                println!("Removing {perms_to_remove} from {total_perms}");
+                total_perms -= perms_to_remove;
+        }
+
+        // remember the permutations so we can skip the calculation next time
+        memo.insert(reduced_record, total_perms);
+
+        total_perms
+
     }
 
     /// Takes a mystery record and reduces all groups of damage records to size 1; then alters the record accordingly
+    /// 
+    /// Examples:
+    /// 
+    /// Damage record ???? 1,1 -> ???? 1,1 will be unchanged as there is nothing to reduce.
+    /// 
+    /// Damage record ???? 2,1 -> ??? 1,1 will be reduced by 1 from both the total size as well as the 2 in the original damage record
+    /// as we are effectively squashing the 2 damaged elements into 1 and need to adjust the total size accordingly.
+    /// 
+    /// Damage record ??????? 2,1,3 -> ???? 1,1,1 will have the group of 2 squashed into 1 and the group of 3 squashed into 1
+    /// and the original record size will be adjusted.
     fn reduce_mystery_record( &self ) -> Record {
         debug_assert!( self.record.iter().all( |s| *s == Condition::Unkown ), 
                        "Record is not mysterious enough." );
@@ -269,24 +299,46 @@ impl Record {
                 unknown_count: reduced_record_size as u32 }
     }
 
-    /// Calculates the total number of permutations of a Record
-    /// 
-    /// This includes invalid permutations where the record does not match the damage record due to groups touching
-    fn calc_total_permutations( &self ) -> u128 {
-        factorial(self.record.len() as u128) / 
-        (factorial(self.unknown_count as u128) * factorial((self.record.len() - self.unknown_count as usize) as u128))
-    }
-
     /// Generates all possible damage records for a pool_size where all valid groups can be summed to
     /// pool_size and have at least 2 groups in them
-    fn generate_groups( pool_size: usize ) -> Vec<DamageRecord> {
-        todo!();
+    fn generate_groups( pool_size: usize, lut: &mut BTreeMap<usize, Vec<DamageRecord>> ) -> Vec<DamageRecord> {
+        if let Some(known_damage_records) = lut.get(&pool_size) {
+            return known_damage_records.to_vec();
+        }
+
+        if pool_size == 1 {
+            return vec![vec![1]];
+        }
+        let mut damage_record_combos: Vec<DamageRecord> = Vec::new();
+        for idx in (1..=pool_size).rev() {
+            // counting down, we want to work with the remainder and make damage records
+            // between the outer idx which is the "held" number and the remainder
+            let remainder = pool_size - idx;
+            for mut subrecord in Record::generate_groups(remainder, lut) {
+                subrecord.insert(0, idx as u32);
+                damage_record_combos.push(subrecord);
+            }
+
+            if remainder == 0 {
+                damage_record_combos.push(vec![idx as u32]);
+            }
+        }
+
+        // record the results for later lookup
+        lut.insert(pool_size, damage_record_combos.clone());
+
+        damage_record_combos
+        
     }
 
 }
 
 pub fn factorial(num: u128) -> u128 {
     (1..=num).product()
+}
+
+pub fn n_choose_k( n: u128, k: u128 ) -> u128 {
+    factorial(n) / ( factorial(k) * factorial(n-k) )
 }
 
 fn main() {
@@ -368,5 +420,49 @@ mod tests {
         // assert_eq!(record_4.get_valid_permutations(), 462);
         let record_5 = Record::parse("?????????????? 1,1,1,1");
         assert_eq!(record_5.get_valid_permutations(), 330);
+    }
+
+    #[test]
+    fn test_reduce_mystery_record() {
+        let record_1 = Record::parse("???? 1,1");
+        assert_eq!(record_1.reduce_mystery_record(), record_1);
+
+        let record_2 = Record::parse("???? 2,1");
+        assert_eq!(record_2.reduce_mystery_record(), Record::parse("??? 1,1"));
+
+        let record_3 = Record::parse("??????? 2,1,3");
+        assert_eq!(record_3.reduce_mystery_record(), Record::parse("???? 1,1,1"));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_reduce_mystery_record_not_mysterious() {
+        Record::parse("???#??? 2,1,3").reduce_mystery_record();
+    }
+
+    #[test]
+    fn test_calc_perms_of_groups() {
+        let mut known_record_perms: BTreeMap<Record, u128> = BTreeMap::new();
+
+        let record_1 = Record::parse("???? 1,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_1, &mut known_record_perms), 3);
+
+        let record_2 = Record::parse("????? 2,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_2, &mut known_record_perms), 3);
+
+        let record_one_solution = Record::parse("????? 1,1,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_one_solution, &mut known_record_perms), 1);
+
+        let record_n_plus_1 = Record::parse("????????????? 1,1,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_n_plus_1, &mut known_record_perms), 165);
+
+        let record_n_plus_2 = Record::parse("?????????????? 1,1,1,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_n_plus_2, &mut known_record_perms), 330);
+
+        let record_n_plus_3 = Record::parse("??????????????? 1,1,1,1,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_n_plus_3, &mut known_record_perms), 462);
+
+        let record_n_plus_4 = Record::parse("???????????????????????? 1,1,1,1,1");
+        assert_eq!(Record::calc_perms_of_groups(&record_n_plus_4, &mut known_record_perms), 15504); // did not verify by hand
     }
 }
